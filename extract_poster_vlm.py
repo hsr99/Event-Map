@@ -229,7 +229,7 @@ def call_hf_inference(
     data_url = f"data:image/jpeg;base64,{b64}"
 
     client = InferenceClient(
-        provider="hf-inference",
+        provider="auto",
         api_key=hf_token,
     )
 
