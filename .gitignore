@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Secrets & environment variables — NEVER commit these
+.env
+*.env
+
+# Output / generated files
+results*.json
+results*.csv
+
+# OS
+.DS_Store
+Thumbs.db
