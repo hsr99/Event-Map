@@ -1,1 +1,2 @@
-# Jarvis - The Chennai Event Map
+# Event-Map
+Chennai Event Map
