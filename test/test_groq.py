@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-test_gemini.py - Test poster extraction using Google Gemini.
+test/test_groq.py - Test poster extraction using Groq API (Qwen model).
 """
+import base64
 import json
 import os
 import sys
@@ -11,6 +12,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from PIL import Image
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = SCRIPT_DIR.parent
+RESULTS_DIR = SCRIPT_DIR / "results"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Load .env from project root
+load_dotenv(ROOT_DIR / ".env", override=True)
 load_dotenv(override=True)
 
 SYSTEM_PROMPT = """\
@@ -51,16 +59,17 @@ Rules:
 """
 
 
-def image_to_bytes(img: Image.Image, fmt: str = "JPEG") -> bytes:
-    buf = BytesIO()
-    rgb = img.convert("RGB")
-    w, h = rgb.size
+def image_to_base64_data_url(path: Path) -> str:
+    img = Image.open(path).convert("RGB")
+    w, h = img.size
     longest = max(w, h)
     if longest > 2048:
         scale = 2048 / longest
-        rgb = rgb.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-    rgb.save(buf, format=fmt, quality=92)
-    return buf.getvalue()
+        img = img.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return f"data:image/jpeg;base64,{b64}"
 
 
 def parse_model_output(text: str) -> dict:
@@ -75,60 +84,61 @@ def parse_model_output(text: str) -> dict:
     return json.loads(text[start:end])
 
 
-def test_gemini(poster_path: Path, model: str = "gemini-2.5-flash"):
-    try:
-        from google import genai
-        from google.genai import types
-    except ImportError:
-        raise RuntimeError("Run: pip install google-genai")
-
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip().strip('"').strip("'")
+def test_groq(poster_path: Path, model: str = "qwen/qwen3.8-27b", out_file: Path = RESULTS_DIR / "test_results_groq.json"):
+    api_key = os.environ.get("GROQ_API_KEY", "").strip().strip('"').strip("'")
     if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not set in environment or .env")
+        raise RuntimeError("GROQ_API_KEY is not set in environment or .env")
 
-    print(f"[test_gemini] Initializing Gemini client with model: {model}...")
-    client = genai.Client(api_key=api_key)
+    print(f"[test_groq] Initializing Groq / OpenAI client for model: {model}...")
+    try:
+        from openai import OpenAI
+        client = OpenAI(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=api_key,
+        )
+    except ImportError:
+        from groq import Groq
+        client = Groq(api_key=api_key)
 
-    img = Image.open(poster_path)
-    img_bytes = image_to_bytes(img)
-
+    data_url = image_to_base64_data_url(poster_path)
     ref_date = date.today().isoformat()
     user_prompt = f"Reference date (today): {ref_date}. Extract all event fields from this poster image."
 
-    image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-    text_part = types.Part.from_text(text=user_prompt)
-
-    print(f"[test_gemini] Sending request for image: {poster_path.name}...")
-    response = client.models.generate_content(
+    print(f"[test_groq] Sending request for image: {poster_path.name} to {model}...")
+    completion = client.chat.completions.create(
         model=model,
-        contents=[types.Content(role="user", parts=[image_part, text_part])],
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.1,
-            response_mime_type="application/json",
-        ),
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": user_prompt},
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                ],
+            },
+        ],
+        temperature=0.1,
     )
 
-    result = parse_model_output(response.text)
+    content = completion.choices[0].message.content
+    result = parse_model_output(content)
     result["_file"] = str(poster_path)
-    result["_backend"] = f"gemini/{model}"
-    print("\n--- Extracted Result (Gemini) ---")
+    result["_backend"] = f"groq/{model}"
+    print("\n--- Extracted Result (Groq) ---")
     print(json.dumps(result, indent=2))
 
-    out_file = Path("test_results_gemini.json")
     out_file.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"\n[test_gemini] Saved test results to {out_file}")
+    print(f"\n[test_groq] Saved test results to {out_file}")
     return result
 
 
 if __name__ == "__main__":
-    test_image = Path("posters/image2.png")
+    test_image = ROOT_DIR / "posters" / "image2.png"
     if len(sys.argv) > 1:
         test_image = Path(sys.argv[1])
     if not test_image.exists():
         print(f"Error: test image {test_image} not found", file=sys.stderr)
         sys.exit(1)
-    
-    # Default to gemini-3.5-flash-lite (fast, cheap)
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash-lite")
-    test_gemini(test_image, model=model_name)
+
+    model = os.environ.get("GROQ_MODEL", "qwen/qwen3.8-27b")
+    test_groq(test_image, model=model)

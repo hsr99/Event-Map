@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-test_qwen.py - Test poster extraction using local Hugging Face Transformers pipeline.
-Uses CPU-friendly Qwen vision model (default: Qwen/Qwen2-VL-2B-Instruct or Qwen/Qwen2.5-VL-3B-Instruct).
+test/test_qwen.py - Test poster extraction using local Hugging Face Transformers pipeline.
+Uses CPU-friendly Qwen vision model (default: Qwen/Qwen2-VL-2B-Instruct).
 """
 import argparse
 import json
@@ -12,6 +12,13 @@ from pathlib import Path
 from dotenv import load_dotenv
 from PIL import Image
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = SCRIPT_DIR.parent
+RESULTS_DIR = SCRIPT_DIR / "results"
+RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Load .env from project root
+load_dotenv(ROOT_DIR / ".env", override=True)
 load_dotenv(override=True)
 
 SYSTEM_PROMPT = """\
@@ -84,12 +91,11 @@ def get_transformers_pipeline(model_id: str):
     return _pipeline_cache[model_id]
 
 
-def test_qwen(poster_path: Path, model_id: str = "Qwen/Qwen2-VL-2B-Instruct"):
-    """
-    Runs local CPU inference using Hugging Face transformers pipeline.
-    Qwen2-VL-2B-Instruct is chosen as the most CPU-friendly & fast vision model
-    compared to 17B Scout (which is >30GB and too heavy for CPU).
-    """
+def test_qwen(
+    poster_path: Path,
+    model_id: str = "Qwen/Qwen2-VL-2B-Instruct",
+    out_file: Path = RESULTS_DIR / "test_results_qwen.json",
+):
     pipe = get_transformers_pipeline(model_id)
 
     ref_date = date.today().isoformat()
@@ -109,14 +115,12 @@ def test_qwen(poster_path: Path, model_id: str = "Qwen/Qwen2-VL-2B-Instruct"):
 
     print(f"[test_qwen] Running pipeline inference for image: {poster_path.name}...")
     output = pipe(text=messages, max_new_tokens=1024)
-    
-    # Extract response text
+
     if isinstance(output, list) and len(output) > 0:
         generated = output[0]
         if isinstance(generated, dict):
             text = generated.get("generated_text") or generated.get("content") or str(generated)
             if isinstance(text, list):
-                # May be list of dicts (messages)
                 text = text[-1].get("content", "") if isinstance(text[-1], dict) else str(text[-1])
         else:
             text = str(generated)
@@ -129,7 +133,6 @@ def test_qwen(poster_path: Path, model_id: str = "Qwen/Qwen2-VL-2B-Instruct"):
     print("\n--- Extracted Result (Local Transformers Qwen) ---")
     print(json.dumps(result, indent=2))
 
-    out_file = Path("test_results_qwen.json")
     out_file.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\n[test_qwen] Saved test results to {out_file}")
     return result
@@ -137,7 +140,7 @@ def test_qwen(poster_path: Path, model_id: str = "Qwen/Qwen2-VL-2B-Instruct"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test local Transformers vision extraction.")
-    parser.add_argument("poster", nargs="?", default="posters/image2.png", help="Path to poster image")
+    parser.add_argument("poster", nargs="?", default=str(ROOT_DIR / "posters" / "image2.png"), help="Path to poster image")
     parser.add_argument(
         "--model",
         default="Qwen/Qwen2-VL-2B-Instruct",
