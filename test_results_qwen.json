@@ -1,0 +1,25 @@
+{
+  "event_name": "Why can't it be Politics & Economics? Rather than Politics V/S Economics?",
+  "date": "2026-10-11",
+  "date_end": "2026-10-11",
+  "time": "11 AM - 1 PM",
+  "time_end": "11 AM - 1 PM",
+  "venue": "Brunch Theory, KNK Road",
+  "area": "Chennai",
+  "ticket_price": "Free",
+  "booking_link": "https://www.eventregistration.com",
+  "category": "Politics",
+  "confidence": {
+    "event_name": 0.0,
+    "date": 0.0,
+    "time": 0.0,
+    "venue": 0.0,
+    "area": 0.0,
+    "ticket_price": 0.0,
+    "booking_link": 0.0,
+    "category": 0.0
+  },
+  "notes": [],
+  "_file": "posters\\image2.png",
+  "_backend": "transformers/Qwen/Qwen2-VL-2B-Instruct"
+}
