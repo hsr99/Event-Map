@@ -2,28 +2,28 @@
 """
 extract_poster_vlm.py - VLM-powered event field extraction from Chennai event posters.
 
-Primary  : Google Gemini 3.5 Flash Lite  (free-tier friendly, fast, cheap)
-Fallback : HuggingFace Serverless Inference API  (HTTP only, no local GPU/download needed)
-           Default model: Qwen/Qwen2.5-VL-3B-Instruct
-           Set HF_TOKEN in your .env for authenticated (higher rate-limit) access.
+Backend Order (Auto Fallback):
+  1. Primary      : Groq API (default: meta-llama/llama-4-scout-17b-16e-instruct -> qwen/qwen3.8-27b)
+  2. First Backup : Google Gemini (default: gemini-3.5-flash-lite)
+  3. Last Order   : Qwen via Hugging Face Transformers pipeline (default: Qwen/Qwen2-VL-2B-Instruct on CPU)
 
-The fallback is activated automatically if:
-  - GEMINI_API_KEY is not set / missing, OR
-  - the Gemini call fails (quota, network, etc.), OR
-  - you explicitly pass --backend hf
+The automatic fallback cascade triggers if:
+  - An API key/token is missing, OR
+  - An API call fails (quota, rate limit, model availability, network)
 
-Output schema is identical to extract_poster.py so results are drop-in compatible.
+You can also force any backend explicitly using `--backend {groq, gemini, qwen, hf}`.
 
 Setup
 -----
-    pip install google-genai pillow python-dotenv huggingface_hub
+    pip install groq openai google-genai huggingface_hub transformers torch torchvision pillow python-dotenv
 
 Usage
 -----
-    python extract_poster_vlm.py poster.jpg
+    python extract_poster_vlm.py posters/
     python extract_poster_vlm.py posters/ --out results.json --csv results.csv
-    python extract_poster_vlm.py posters/ --post-date 2026-10-05
-    python extract_poster_vlm.py posters/ --backend hf   # force HF fallback
+    python extract_poster_vlm.py posters/ --backend groq
+    python extract_poster_vlm.py posters/ --backend gemini
+    python extract_poster_vlm.py posters/ --backend qwen
 """
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from PIL import Image
 
-load_dotenv()  # picks up GEMINI_API_KEY from .env
+load_dotenv(override=True)
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
 
@@ -114,6 +114,12 @@ def image_to_bytes(img: Image.Image, fmt: str = "JPEG") -> bytes:
     return buf.getvalue()
 
 
+def image_to_data_url(img: Image.Image) -> str:
+    img_bytes = image_to_bytes(img)
+    b64 = base64.b64encode(img_bytes).decode("utf-8")
+    return f"data:image/jpeg;base64,{b64}"
+
+
 # --------------------------------------------------------------------------- #
 # Post-processing
 # --------------------------------------------------------------------------- #
@@ -163,17 +169,81 @@ def parse_model_output(text: str) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# Backend: Gemini 2.0 Flash Lite
+# Backend 1: Groq (Primary)
 # --------------------------------------------------------------------------- #
-def call_gemini(img: Image.Image, ref: date, model: str = "gemini-3.5-flash-lite") -> dict:
+def call_groq(
+    img: Image.Image,
+    ref: date,
+    model: str = "qwen/qwen3.8-27b",
+) -> dict:
+    api_key = os.environ.get("GROQ_API_KEY", "").strip().strip('"').strip("'")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY not set in environment or .env")
+
     try:
-        # pyrefly: ignore [missing-import]
+        from openai import OpenAI
+        client = OpenAI(
+            base_url="https://api.groq.com/openai/v1",
+            api_key=api_key,
+        )
+    except ImportError:
+        try:
+            from groq import Groq
+            client = Groq(api_key=api_key)
+        except ImportError:
+            raise RuntimeError("Run: pip install groq openai")
+
+    data_url = image_to_data_url(img)
+    user_prompt = build_user_prompt(ref)
+
+    # Models to try in order on Groq
+    candidates = [model]
+    if model != "qwen/qwen3.6-27b":
+        candidates.append("qwen/qwen3.6-27b")
+
+    last_exc = None
+    for m in candidates:
+        try:
+            completion = client.chat.completions.create(
+                model=m,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user_prompt},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    },
+                ],
+                temperature=0.1,
+            )
+            text = completion.choices[0].message.content
+            raw = parse_model_output(text)
+            raw["_backend"] = f"groq/{m}"
+            return raw
+        except Exception as exc:
+            last_exc = exc
+            print(f"[vlm] Groq model '{m}' failed: {exc}", file=sys.stderr)
+
+    raise RuntimeError(f"All Groq candidates failed: {last_exc}")
+
+
+# --------------------------------------------------------------------------- #
+# Backend 2: Google Gemini (First Backup)
+# --------------------------------------------------------------------------- #
+def call_gemini(
+    img: Image.Image,
+    ref: date,
+    model: str = "gemini-3.5-flash-lite",
+) -> dict:
+    try:
         from google import genai
         from google.genai import types
     except ImportError:
         raise RuntimeError("Run: pip install google-genai")
 
-    api_key = os.environ.get("GEMINI_API_KEY", "").strip().strip('"')
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip().strip('"').strip("'")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set")
 
@@ -198,93 +268,113 @@ def call_gemini(img: Image.Image, ref: date, model: str = "gemini-3.5-flash-lite
 
 
 # --------------------------------------------------------------------------- #
-# Backend: HuggingFace Serverless Inference API (HTTP fallback, no GPU needed)
+# Backend 3: Hugging Face Transformers pipeline (Last Order, CPU Friendly)
 # --------------------------------------------------------------------------- #
-def call_hf_inference(
+_local_pipeline = None
+
+
+def call_local_transformers_qwen(
     img: Image.Image,
     ref: date,
-    model_id: str = "Qwen/Qwen2.5-VL-3B-Instruct",
+    model_id: str = "Qwen/Qwen2-VL-2B-Instruct",
 ) -> dict:
     """
-    Calls the HuggingFace Serverless Inference API via HTTP.
-    No local model download, no GPU required — works on any machine.
-    Requires: pip install huggingface_hub
-    Set HF_TOKEN in .env for authenticated access (higher rate limits).
+    Runs local CPU inference using Hugging Face transformers pipeline.
+    Qwen2-VL-2B-Instruct is chosen as the most CPU-friendly & fast vision model
+    compared to 17B Scout (which is >30GB and too heavy for CPU).
     """
+    global _local_pipeline
     try:
-        from huggingface_hub import InferenceClient
+        import torch
+        from transformers import pipeline
     except ImportError:
-        raise RuntimeError("Run: pip install huggingface_hub")
+        raise RuntimeError("Run: pip install transformers torch torchvision")
 
-    hf_token = os.environ.get("HF_TOKEN", "").strip() or None
-    if not hf_token:
-        print(
-            "[vlm] HF_TOKEN not set — using unauthenticated HF Inference (may be rate-limited).",
-            file=sys.stderr,
+    if _local_pipeline is None:
+        print(f"[vlm] Loading Hugging Face pipeline for '{model_id}' on CPU...", file=sys.stderr)
+        _local_pipeline = pipeline(
+            "image-text-to-text",
+            model=model_id,
+            torch_dtype=torch.float32,
+            device="cpu",
         )
 
-    # Encode image as a base64 data URL
-    img_bytes = image_to_bytes(img)
-    b64 = base64.b64encode(img_bytes).decode()
-    data_url = f"data:image/jpeg;base64,{b64}"
+    user_prompt = f"{SYSTEM_PROMPT}\n\nReference date (today): {ref.isoformat()}. Extract all event fields from this poster image."
+    rgb_img = img.convert("RGB")
 
-    client = InferenceClient(
-        provider="auto",
-        api_key=hf_token,
-    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "image", "image": rgb_img},
+                {"type": "text", "text": user_prompt},
+            ],
+        }
+    ]
 
-    print(f"[vlm] Calling HF Inference API: {model_id}", file=sys.stderr)
-    response = client.chat.completions.create(
-        model=model_id,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": data_url}},
-                    {"type": "text", "text": build_user_prompt(ref)},
-                ],
-            },
-        ],
-        max_tokens=1024,
-        temperature=0.1,
-    )
+    output = _local_pipeline(text=messages, max_new_tokens=1024)
+    if isinstance(output, list) and len(output) > 0:
+        generated = output[0]
+        if isinstance(generated, dict):
+            text = generated.get("generated_text") or generated.get("content") or str(generated)
+            if isinstance(text, list):
+                text = text[-1].get("content", "") if isinstance(text[-1], dict) else str(text[-1])
+        else:
+            text = str(generated)
+    else:
+        text = str(output)
 
-    text = response.choices[0].message.content
     raw = parse_model_output(text)
-    raw["_backend"] = f"hf-inference/{model_id}"
+    raw["_backend"] = f"transformers/{model_id}"
     return raw
 
 
 # --------------------------------------------------------------------------- #
-# Orchestration
+# Orchestration with Cascade: Groq (1st) -> Gemini (2nd) -> Qwen (3rd)
 # --------------------------------------------------------------------------- #
 def extract_poster_vlm(
     path: Path,
     ref: date,
     backend: str = "auto",
+    groq_model: str = "qwen/qwen3.8-27b",
     gemini_model: str = "gemini-3.5-flash-lite",
-    hf_model: str = "Qwen/Qwen2.5-VL-3B-Instruct",
+    qwen_model: str = "Qwen/Qwen2-VL-2B-Instruct",
 ) -> dict:
     img = load_image(path)
     raw = None
     errors = []
 
-    if backend in ("auto", "gemini"):
+    # 1. Try Groq (Primary)
+    if backend in ("auto", "groq"):
+        try:
+            raw = call_groq(img, ref, model=groq_model)
+        except Exception as exc:
+            errors.append(f"Groq failed: {exc}")
+            if backend == "groq":
+                raise
+            print(f"[vlm] Groq failed, falling back to Gemini (1st backup): {exc}", file=sys.stderr)
+
+    # 2. Try Gemini (First backup)
+    if raw is None and backend in ("auto", "gemini"):
         try:
             raw = call_gemini(img, ref, model=gemini_model)
         except Exception as exc:
             errors.append(f"Gemini failed: {exc}")
             if backend == "gemini":
                 raise
-            print(f"[vlm] Gemini error, falling back to HF Inference API: {exc}", file=sys.stderr)
+            print(f"[vlm] Gemini failed, falling back to Qwen / Transformers (last order): {exc}", file=sys.stderr)
+
+    # 3. Try Qwen / Local Transformers (Last order)
+    if raw is None and backend in ("auto", "qwen", "hf"):
+        try:
+            raw = call_local_transformers_qwen(img, ref, model_id=qwen_model)
+        except Exception as exc:
+            errors.append(f"Qwen / Transformers failed: {exc}")
+            if backend in ("qwen", "hf"):
+                raise
 
     if raw is None:
-        try:
-            raw = call_hf_inference(img, ref, model_id=hf_model)
-        except Exception as exc:
-            errors.append(f"HF Inference failed: {exc}")
-            raise RuntimeError("Both backends failed:\n" + "\n".join(errors)) from exc
+        raise RuntimeError("All backends failed:\n" + "\n".join(errors))
 
     return coerce_result(raw, path)
 
@@ -310,7 +400,7 @@ def find_images(target: Path) -> list[Path]:
 # --------------------------------------------------------------------------- #
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Extract event fields from posters using a Vision-Language Model."
+        description="Extract event fields from posters using Vision-Language Models (Groq -> Gemini -> Qwen)."
     )
     ap.add_argument("path", type=Path, help="poster image or folder of posters")
     ap.add_argument("--out", type=Path, default=Path("results.json"), help="JSON output path")
@@ -320,13 +410,20 @@ def main() -> int:
         help="YYYY-MM-DD reference date (used to infer missing years)"
     )
     ap.add_argument(
-        "--backend", choices=["auto", "gemini", "hf"], default="auto",
-        help="'auto' = try Gemini first, fall back to HF Serverless Inference API"
+        "--backend", choices=["auto", "groq", "gemini", "qwen", "hf"], default="auto",
+        help="'auto' = Groq first -> Gemini backup -> Qwen local fallback"
     )
-    ap.add_argument("--gemini-model", default="gemini-3.5-flash-lite")
     ap.add_argument(
-        "--hf-model", default="Qwen/Qwen2.5-VL-3B-Instruct",
-        help="HuggingFace model ID for the serverless fallback"
+        "--groq-model", default="qwen/qwen3.8-27b",
+        help="Groq model ID (default: qwen/qwen3.8-27b)"
+    )
+    ap.add_argument(
+        "--gemini-model", default="gemini-3.5-flash-lite",
+        help="Google Gemini model ID (default: gemini-3.5-flash-lite)"
+    )
+    ap.add_argument(
+        "--qwen-model", default="Qwen/Qwen2-VL-2B-Instruct",
+        help="Hugging Face model ID for local transformers fallback (default: Qwen/Qwen2-VL-2B-Instruct)"
     )
     args = ap.parse_args()
 
@@ -342,8 +439,9 @@ def main() -> int:
                 path,
                 ref=args.post_date,
                 backend=args.backend,
+                groq_model=args.groq_model,
                 gemini_model=args.gemini_model,
-                hf_model=args.hf_model,
+                qwen_model=args.qwen_model,
             )
         except Exception as exc:
             res = {"file": str(path), "error": str(exc), "needs_review": ["error"]}

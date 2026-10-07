@@ -1,0 +1,41 @@
+import json, urllib.request, urllib.parse
+
+# 1. Chennai boundary via Nominatim (polygon_geojson)
+req = urllib.request.Request(
+    "https://nominatim.openstreetmap.org/search?q=Chennai%2C+Tamil+Nadu%2C+India&format=json&polygon_geojson=1&limit=1",
+    headers={"User-Agent": "your-app-name/1.0"})
+boundary = json.load(urllib.request.urlopen(req))[0]["geojson"]["coordinates"][0]
+
+# 2. Major roads via Overpass (bbox = south,west,north,east)
+query = '[out:json];way["highway"~"motorway|trunk|primary|secondary"](12.85,80.13,13.24,80.34);out geom;'
+req = urllib.request.Request(
+    "https://overpass.private.coffee/api/interpreter",
+    data=urllib.parse.urlencode({"data": query}).encode())
+roads = json.load(urllib.request.urlopen(req))["elements"]
+
+# 3. Project lon/lat -> x/y and build SVG
+simp = boundary[::2]  # crude simplify; use a proper algorithm if u want
+lons = [c[0] for c in simp]; lats = [c[1] for c in simp]
+minlon, maxlon, minlat, maxlat = min(lons), max(lons), min(lats), max(lats)
+W = 600
+scale = W / (maxlon - minlon)
+H = (maxlat - minlat) * scale
+def pt(lon, lat):
+    return f"{(lon-minlon)*scale:.1f},{(maxlat-lat)*scale:.1f}"
+
+bpath = "M" + " L".join(pt(*c) for c in simp) + " Z"
+road_paths = []
+for el in roads:
+    if el["type"] != "way" or "geometry" not in el: continue
+    pts = [(p["lon"], p["lat"]) for p in el["geometry"]]
+    if len(pts) > 1:
+        road_paths.append("M" + " L".join(pt(*p) for p in pts))
+
+svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W:.0f} {H:.0f}">
+  <defs><clipPath id="city"><path d="{bpath}"/></clipPath></defs>
+  <g clip-path="url(#city)">
+    <path d="{" ".join(road_paths)}" fill="none" stroke="#1f4d38" stroke-width="1"/>
+  </g>
+  <path d="{bpath}" fill="none" stroke="#7CFFB2" stroke-width="2" stroke-linejoin="round"/>
+</svg>'''
+open("chennai-map.svg", "w").write(svg)
