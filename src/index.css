@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-display: "Bebas Neue", Impact, "Arial Narrow", sans-serif;
+  --font-serif: "Aleo", Georgia, serif;
+  --font-sans: "Aleo", Georgia, serif;
+
+  --color-ivory: #fffff0;
+  --color-ink: #121212;
+  --color-bone: #ede9dd;
+}
+
+/* Hairlines and muted text flip with the theme, so they're driven by variables rather than paired dark: classes */
+:root {
+  --line: rgb(18 18 18 / 0.12);
+  --muted: rgb(18 18 18 / 0.6);
+}
+
+.dark {
+  --line: rgb(237 233 221 / 0.12);
+  --muted: rgb(237 233 221 / 0.58);
+}
+
+@theme inline {
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+    scrollbar-gutter: stable;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-ivory font-sans text-ink antialiased transition-colors duration-200 dark:bg-ink dark:text-bone;
+    font-synthesis-weight: none;
+  }
+
+  ::selection {
+    @apply bg-teal-700 text-ivory dark:bg-teal-400 dark:text-ink;
+  }
+}
