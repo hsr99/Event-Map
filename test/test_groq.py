@@ -133,7 +133,7 @@ def test_groq(poster_path: Path, model: str = "qwen/qwen3.8-27b", out_file: Path
 
 
 if __name__ == "__main__":
-    test_image = ROOT_DIR / "posters" / "image2.png"
+    test_image = ROOT_DIR / "frontend" / "public" / "posters" / "image2.png"
     if len(sys.argv) > 1:
         test_image = Path(sys.argv[1])
     if not test_image.exists():

@@ -25,7 +25,7 @@ Chennai-events/
 │       ├── test_results_gemini.json
 │       └── test_results_qwen.json
 ├── extract_poster_vlm.py        # Cascaded VLM batch extractor (Groq -> Gemini -> Qwen)
-├── posters/                     # Sample poster images
+├── frontend/public/posters/     # Poster images (single source, served by the frontend)
 └── src/                         # Frontend application
 ```
 
@@ -37,19 +37,19 @@ Each backend has a standalone test script located in `test/`:
 
 - **Groq Test**:
   ```bash
-  python test/test_groq.py [posters/image2.png]
+  python test/test_groq.py [frontend/public/posters/image2.png]
   ```
   Saves output to `test/results/test_results_groq.json`.
 
 - **Gemini Test**:
   ```bash
-  python test/test_gemini.py [posters/image2.png]
+  python test/test_gemini.py [frontend/public/posters/image2.png]
   ```
   Saves output to `test/results/test_results_gemini.json`.
 
 - **Local Qwen / Hugging Face Transformers Test**:
   ```bash
-  python test/test_qwen.py [posters/image2.png] [--model Qwen/Qwen2-VL-2B-Instruct]
+  python test/test_qwen.py [frontend/public/posters/image2.png] [--model Qwen/Qwen2-VL-2B-Instruct]
   ```
   Saves output to `test/results/test_results_qwen.json`.
 
@@ -61,10 +61,10 @@ Run the cascaded extraction pipeline on single posters or whole directories:
 
 ```bash
 # Automatic fallback cascade (Groq 1st -> Gemini 2nd -> Qwen 3rd)
-python extract_poster_vlm.py posters/ --out results.json --csv results.csv
+python extract_poster_vlm.py frontend/public/posters/ --out results.json --csv results.csv
 
 # Force a specific backend
-python extract_poster_vlm.py posters/ --backend groq
-python extract_poster_vlm.py posters/ --backend gemini
-python extract_poster_vlm.py posters/ --backend qwen
+python extract_poster_vlm.py frontend/public/posters/ --backend groq
+python extract_poster_vlm.py frontend/public/posters/ --backend gemini
+python extract_poster_vlm.py frontend/public/posters/ --backend qwen
 ```

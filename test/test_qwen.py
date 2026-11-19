@@ -140,7 +140,7 @@ def test_qwen(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test local Transformers vision extraction.")
-    parser.add_argument("poster", nargs="?", default=str(ROOT_DIR / "posters" / "image2.png"), help="Path to poster image")
+    parser.add_argument("poster", nargs="?", default=str(ROOT_DIR / "frontend" / "public" / "posters" / "image2.png"), help="Path to poster image")
     parser.add_argument(
         "--model",
         default="Qwen/Qwen2-VL-2B-Instruct",

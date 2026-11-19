@@ -173,6 +173,35 @@ def insert_event(event_data: Dict[str, Any]) -> int:
     return event_id
 
 
+def get_event_by_image_url(image_url: str) -> Optional[Dict[str, Any]]:
+    """Find an event (any status) that already uses this poster image."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM events WHERE image_url = ? LIMIT 1", (image_url,))
+        row = cursor.fetchone()
+        return dict_from_event_row(row) if row else None
+
+
+def get_poster_by_hash(file_hash: str) -> Optional[Dict[str, Any]]:
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posters WHERE file_hash = ? LIMIT 1", (file_hash,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+
+def insert_poster_record(event_id: Optional[int], filename: str, file_hash: str, raw_vlm_output: Any) -> int:
+    """Record which poster produced which event, with the raw model output for auditing."""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO posters (event_id, filename, file_hash, raw_vlm_output, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (event_id, filename, file_hash, json.dumps(raw_vlm_output, ensure_ascii=False), datetime.now().isoformat()))
+        conn.commit()
+        return cursor.lastrowid
+
+
 def get_venues() -> List[Dict[str, Any]]:
     with get_connection() as conn:
         cursor = conn.cursor()

@@ -19,11 +19,11 @@ Setup
 
 Usage
 -----
-    python extract_poster_vlm.py posters/
-    python extract_poster_vlm.py posters/ --out results.json --csv results.csv
-    python extract_poster_vlm.py posters/ --backend groq
-    python extract_poster_vlm.py posters/ --backend gemini
-    python extract_poster_vlm.py posters/ --backend qwen
+    python extract_poster_vlm.py frontend/public/posters/
+    python extract_poster_vlm.py frontend/public/posters/ --out results.json --csv results.csv
+    python extract_poster_vlm.py frontend/public/posters/ --backend groq
+    python extract_poster_vlm.py frontend/public/posters/ --backend gemini
+    python extract_poster_vlm.py frontend/public/posters/ --backend qwen
 """
 from __future__ import annotations
 

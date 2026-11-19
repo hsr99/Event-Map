@@ -19,11 +19,11 @@ Setup
 
 Usage
 -----
-    python extract_poster_vlm.py posters/
-    python extract_poster_vlm.py posters/ --out results.json --csv results.csv
-    python extract_poster_vlm.py posters/ --backend groq
-    python extract_poster_vlm.py posters/ --backend gemini
-    python extract_poster_vlm.py posters/ --backend qwen
+    python extract_poster_vlm.py frontend/public/posters/
+    python extract_poster_vlm.py frontend/public/posters/ --out results.json --csv results.csv
+    python extract_poster_vlm.py frontend/public/posters/ --backend groq
+    python extract_poster_vlm.py frontend/public/posters/ --backend gemini
+    python extract_poster_vlm.py frontend/public/posters/ --backend qwen
 """
 from __future__ import annotations
 
@@ -64,7 +64,8 @@ information and return ONLY a valid JSON object with these exact keys:
   "booking_link":  string | null,   // registration / booking URL if present
   "category":      string | null,   // one of: tech, music, comedy, art_workshop,
                                     //   sports_fitness, food_drink, networking_business,
-                                    //   film_theatre, community_social
+                                    //   film_theatre, community_social, college_cultural
+  "description":   string | null,   // 1-2 sentence summary of the event, in English
   "confidence": {
     "event_name":   float,
     "date":         float,
@@ -125,7 +126,7 @@ def image_to_data_url(img: Image.Image) -> str:
 # --------------------------------------------------------------------------- #
 REQUIRED_FIELDS = [
     "event_name", "date", "date_end", "time", "time_end",
-    "venue", "area", "ticket_price", "booking_link", "category",
+    "venue", "area", "ticket_price", "booking_link", "category", "description",
 ]
 CONFIDENCE_FIELDS = [
     "event_name", "date", "time", "venue", "area",
@@ -340,7 +341,26 @@ def extract_poster_vlm(
     gemini_model: str = "gemini-3.5-flash-lite",
     qwen_model: str = "Qwen/Qwen2-VL-2B-Instruct",
 ) -> dict:
-    img = load_image(path)
+    return extract_from_image(
+        load_image(path), path, ref,
+        backend=backend, groq_model=groq_model,
+        gemini_model=gemini_model, qwen_model=qwen_model,
+    )
+
+
+def extract_from_image(
+    img: Image.Image,
+    path: Path,
+    ref: date,
+    backend: str = "auto",
+    groq_model: str = "qwen/qwen3.8-27b",
+    gemini_model: str = "gemini-3.5-flash-lite",
+    qwen_model: str = "Qwen/Qwen2-VL-2B-Instruct",
+) -> dict:
+    """Run the Groq -> Gemini -> local Qwen cascade on an already-loaded image.
+
+    `path` is only recorded in the result's "file" field.
+    """
     raw = None
     errors = []
 

@@ -19,8 +19,8 @@ Setup
 Usage
 -----
     python extract_poster.py poster.jpg
-    python extract_poster.py posters/ --out results.json --csv results.csv
-    python extract_poster.py posters/ --post-date 2026-10-05   # used to infer missing years
+    python extract_poster.py frontend/public/posters/ --out results.json --csv results.csv
+    python extract_poster.py frontend/public/posters/ --post-date 2026-10-05   # used to infer missing years
 
 Honest limitation: OCR + rules works on clean, text-heavy posters and degrades fast on
 artsy fonts, busy backgrounds, and stylised dates. Use it as a baseline to compare

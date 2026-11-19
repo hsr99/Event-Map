@@ -4,6 +4,7 @@ Provides endpoints for event discovery, poster extraction, event submission, and
 """
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
@@ -82,11 +83,16 @@ async def extract_poster(poster: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Empty image file uploaded")
 
     details = extract_poster_details(contents, filename=poster.filename or "")
-    # Geocode venue
+    details.pop("raw", None)  # unmapped model output; not needed by the form
+
+    # Geocode venue (a known venue also gives its canonical name)
     geo = resolve_venue_coordinates(details.get("venue", ""), details.get("area", ""))
     details["lat"] = geo["lat"]
     details["lng"] = geo["lng"]
-    if not details.get("area"):
+    details["location_precision"] = geo["precision"]
+    if geo.get("venue"):
+        details["venue"] = geo["venue"]
+    if geo["precision"] == "venue" or not details.get("area"):
         details["area"] = geo["area"]
 
     return details
