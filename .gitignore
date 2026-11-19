@@ -37,6 +37,8 @@ env/
 # Secrets & environment variables — NEVER commit these
 .env
 *.env
+*.db
+data/*.db
 
 # Output / generated files
 results*.json

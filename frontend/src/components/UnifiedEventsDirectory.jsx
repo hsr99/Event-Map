@@ -428,7 +428,6 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                   <div
                     key={event.id}
                     id={`split-card-${event.id}`}
-                    onMouseEnter={() => setFocusedEventId(event.id)}
                     onClick={() => setFocusedEventId(event.id)}
                     className={`cursor-pointer group flex flex-col sm:flex-row gap-4 border p-4 transition-all ${
                       isFocused

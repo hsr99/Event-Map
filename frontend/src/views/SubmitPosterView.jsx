@@ -19,6 +19,7 @@ export default function SubmitPosterView({ theme }) {
   const fileInputId = useId();
 
   const [posterPreview, setPosterPreview] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -34,18 +35,43 @@ export default function SubmitPosterView({ theme }) {
     booking_link: '',
   });
 
-  const handleImageChange = (e) => {
+  const handleImageChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setSelectedFile(file);
     const url = URL.createObjectURL(file);
     setPosterPreview(url);
 
-    // Simulate smart VLM parsing for instant feedback
+    // Call backend VLM extraction if server is up, with smart fallback
     setIsExtracting(true);
-    setTimeout(() => {
+    try {
+      const body = new FormData();
+      body.append('poster', file);
+      const res = await fetch('http://localhost:8000/api/extract', {
+        method: 'POST',
+        body,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFormData((prev) => ({
+          ...prev,
+          title: data.title || prev.title,
+          category: data.category || prev.category,
+          venue: data.venue || prev.venue,
+          area: data.area || prev.area,
+          date: data.date || prev.date,
+          price: data.price !== undefined ? data.price : prev.price,
+          isFree: data.is_free !== undefined ? data.is_free : (data.price === 0),
+          description: data.description || prev.description,
+        }));
+      }
+    } catch {
+      // Offline fallback: simulate brief extraction delay
+      await new Promise((r) => setTimeout(r, 600));
+    } finally {
       setIsExtracting(false);
-    }, 900);
+    }
   };
 
   const handleVenueSelect = (venueName) => {
@@ -61,31 +87,54 @@ export default function SubmitPosterView({ theme }) {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const selectedVenue = CHENNAI_VENUES.find((v) => v.name === formData.venue);
-    const newEvent = {
-      id: Date.now(),
-      title: formData.title,
-      category: formData.category,
-      area: formData.area,
-      venue: formData.venue,
-      date: formData.date,
-      price: formData.isFree ? 0 : Number(formData.price || 0),
-      isFree: Boolean(formData.isFree),
-      description: formData.description,
-      image_url:
-        posterPreview ||
-        'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
-      lat: selectedVenue ? selectedVenue.lat : 13.04,
-      lng: selectedVenue ? selectedVenue.lng : 80.24,
-    };
+    try {
+      const body = new FormData();
+      if (selectedFile) body.append('poster', selectedFile);
+      body.append('title', formData.title);
+      body.append('category', formData.category);
+      body.append('venue', formData.venue);
+      body.append('area', formData.area);
+      body.append('date', formData.date);
+      body.append('price', String(formData.isFree ? 0 : formData.price));
+      body.append('is_free', String(formData.isFree));
+      body.append('description', formData.description || '');
 
-    // Prepend to active event listings
-    events.unshift(newEvent);
+      const res = await fetch('http://localhost:8000/api/submit', {
+        method: 'POST',
+        body,
+      });
+      if (res.ok) {
+        const saved = await res.json();
+        events.unshift(saved);
+      } else {
+        throw new Error('API submission failed');
+      }
+    } catch {
+      // Fallback: local insertion
+      const selectedVenue = CHENNAI_VENUES.find((v) => v.name === formData.venue);
+      const newEvent = {
+        id: Date.now(),
+        title: formData.title,
+        category: formData.category,
+        area: formData.area,
+        venue: formData.venue,
+        date: formData.date,
+        price: formData.isFree ? 0 : Number(formData.price || 0),
+        isFree: Boolean(formData.isFree),
+        description: formData.description,
+        image_url:
+          posterPreview ||
+          'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
+        lat: selectedVenue ? selectedVenue.lat : 13.04,
+        lng: selectedVenue ? selectedVenue.lng : 80.24,
+      };
+      events.unshift(newEvent);
+    }
+
     setSuccess(true);
-
     setTimeout(() => {
       navigate('/events');
     }, 1200);
