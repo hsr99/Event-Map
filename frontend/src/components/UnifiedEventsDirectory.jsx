@@ -138,6 +138,17 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
 
   const closeEvent = useCallback(() => setSelectedEvent(null), []);
 
+  // Only let map movement re-filter the list when "filter by map area" is on;
+  // otherwise every pan would rebuild the list and re-trigger the map.
+  const boundsIds = filterByMapBounds ? visibleMapEventIds : null;
+
+  // Map reports the on-screen events after every move; skip the update when nothing changed.
+  const handleBoundsChange = useCallback((ids) => {
+    setVisibleMapEventIds((prev) =>
+      prev && prev.length === ids.length && prev.every((id, i) => id === ids[i]) ? prev : ids,
+    );
+  }, []);
+
   const visibleEvents = useMemo(() => {
     const q = query.trim().toLowerCase();
     return categoryEvents.filter((event) => {
@@ -148,12 +159,12 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
         matchesTime(event, timeFilter);
 
       if (!basicMatch) return false;
-      if (filterByMapBounds && visibleMapEventIds && visibleMapEventIds.length > 0) {
-        return visibleMapEventIds.includes(event.id);
+      if (boundsIds && boundsIds.length > 0) {
+        return boundsIds.includes(event.id);
       }
       return true;
     });
-  }, [categoryEvents, query, budget, area, timeFilter, filterByMapBounds, visibleMapEventIds]);
+  }, [categoryEvents, query, budget, area, timeFilter, boundsIds]);
 
   // Compute live Chennai stats
   const stats = useMemo(() => {
@@ -519,7 +530,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                 events={visibleEvents}
                 selectedEventId={focusedEventId}
                 onSelectEvent={handleMapPinSelect}
-                onBoundsChange={setVisibleMapEventIds}
+                onBoundsChange={handleBoundsChange}
                 theme={theme}
                 interactive={true}
               />
@@ -535,7 +546,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
               events={visibleEvents}
               selectedEventId={focusedEventId}
               onSelectEvent={handleMapPinSelect}
-              onBoundsChange={setVisibleMapEventIds}
+              onBoundsChange={handleBoundsChange}
               theme={theme}
               interactive={true}
             />
