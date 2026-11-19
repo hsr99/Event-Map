@@ -429,7 +429,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
         {viewMode === 'grid' && (
           <motion.div
             layout
-            className="relative grid grid-cols-1 gap-x-8 gap-y-10 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
+            className="relative grid grid-cols-3 gap-x-2.5 gap-y-4 sm:grid-cols-2 sm:gap-x-8 sm:gap-y-10 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5"
           >
             <AnimatePresence mode="popLayout">
               {visibleEvents.map((event) => (
