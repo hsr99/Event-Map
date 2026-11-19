@@ -5,11 +5,17 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { LocateFixed } from 'lucide-react';
 import { formatPrice, formatDate, formatTime } from '../lib/format';
 
-// Category color accents matching the site's palette
+// Esri's Canvas tiles have real data up to zoom 16 around Chennai; beyond that the
+// server returns a "Map data not yet available" placeholder. Stop requesting tiles
+// there (MapLibre scales up the zoom-16 ones) and allow one step of that scaling.
+const TILE_MAX_ZOOM = 16;
+const MAP_MAX_ZOOM = 17;
+
 // Event text comes from public submissions; escape it before it goes into HTML strings.
 const escapeHtml = (value) =>
   String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+// Category color accents matching the site's palette
 const CATEGORY_COLORS = {
   concerts: '#eab308', // Gold
   'tech-events': '#2dd4bf', // Teal
@@ -64,6 +70,7 @@ export default function ChennaiMap({
             `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_${themeName}_Gray_Base/MapServer/tile/{z}/{y}/{x}`,
           ],
           tileSize: 256,
+          maxzoom: TILE_MAX_ZOOM,
           attribution:
             '&copy; <a href="https://www.esri.com">Esri</a> &copy; OpenStreetMap contributors',
         },
@@ -73,6 +80,7 @@ export default function ChennaiMap({
             `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_${themeName}_Gray_Reference/MapServer/tile/{z}/{y}/{x}`,
           ],
           tileSize: 256,
+          maxzoom: TILE_MAX_ZOOM,
         },
       },
       layers: [
@@ -104,7 +112,7 @@ export default function ChennaiMap({
       center: CHENNAI_CENTER,
       zoom: defaultZoom(),
       minZoom: 9.5,
-      maxZoom: 18,
+      maxZoom: MAP_MAX_ZOOM,
       maxBounds: CHENNAI_BOUNDS,
       attributionControl: false,
     });
