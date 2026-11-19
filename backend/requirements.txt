@@ -1,0 +1,9 @@
+# Backend + tools. Install with: pip install -r backend/requirements.txt
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+pillow
+supabase
+openai          # Groq is called through its OpenAI-compatible API
+google-genai    # Gemini fallback (optional)

@@ -3,50 +3,32 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+const isPlaceholder = (value) => !value || value.includes('your-');
 
-export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey)
-  : null;
+export const isSupabaseConfigured = !isPlaceholder(supabaseUrl) && !isPlaceholder(supabaseAnonKey);
+
+// Public (anon) client: row-level security limits it to reading published
+// events and venues. All writes go through the backend API.
+export const supabase = isSupabaseConfigured ? createClient(supabaseUrl, supabaseAnonKey) : null;
+
+const EVENT_COLUMNS =
+  'id,title,category,area,venue,date,end_date,price,is_free,description,image_url,booking_link,lat,lng,is_featured';
 
 /**
- * Fetch events from Supabase (or return null if unconfigured)
+ * Published events, soonest first, in the shape the UI uses (`isFree`).
+ * Returns null when Supabase isn't configured or the request fails, so the
+ * caller can keep showing the bundled snapshot.
  */
-export async function fetchSupabaseEvents() {
+export async function fetchPublishedEvents() {
   if (!supabase) return null;
-  try {
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .eq('status', 'published')
-      .order('date', { ascending: true });
-
-    if (error) {
-      console.warn('Supabase fetch error:', error);
-      return null;
-    }
-    return data;
-  } catch (err) {
-    console.warn('Supabase error:', err);
+  const { data, error } = await supabase
+    .from('events')
+    .select(EVENT_COLUMNS)
+    .eq('status', 'published')
+    .order('date', { ascending: true });
+  if (error) {
+    console.warn('Could not load events from Supabase:', error.message);
     return null;
   }
-}
-
-/**
- * Submit community poster to Supabase submissions intake
- */
-export async function submitPosterToSupabase({ source = 'web_form', submitterContact, rawPosterUrl, extractedData }) {
-  if (!supabase) return null;
-  return await supabase
-    .from('submissions')
-    .insert([
-      {
-        source,
-        submitter_contact: submitterContact,
-        raw_poster_url: rawPosterUrl,
-        extracted_data: extractedData,
-        status: 'review',
-      },
-    ])
-    .select();
+  return data.map((row) => ({ ...row, isFree: Boolean(row.is_free) }));
 }

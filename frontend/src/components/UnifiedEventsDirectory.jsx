@@ -23,7 +23,7 @@ import EventDrawer from './EventDrawer';
 import Select from './Select';
 import CategoryBentoOverlay from './CategoryBentoOverlay';
 import ChennaiMap from './ChennaiMap';
-import { events } from '../data/events';
+import { useEvents } from '../data/eventsContext';
 import { formatDate, formatTime } from '../lib/format';
 
 const BUDGETS = ['All', 'Free', 'Ticketed'];
@@ -32,8 +32,6 @@ const TIME_FILTERS = [
   { id: 'weekend', label: 'This Weekend' },
   { id: 'tonight', label: 'Tonight / Evening' },
 ];
-
-const eventsByDate = [...events].sort((a, b) => new Date(a.date) - new Date(b.date));
 
 const matchesQuery = (event, q) =>
   !q || [event.title, event.venue, event.area, event.category].some((field) => field.toLowerCase().includes(q));
@@ -70,6 +68,7 @@ const CATEGORY_TITLES = {
 
 export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
   const navigate = useNavigate();
+  const { events: eventsByDate } = useEvents();
 
   const [activeCategory, setActiveCategory] = useState('all');
   const [isCategoryOverlayOpen, setIsCategoryOverlayOpen] = useState(false);
@@ -115,7 +114,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
   const categoryEvents = useMemo(() => {
     if (activeCategory === 'all') return eventsByDate;
     return eventsByDate.filter((e) => e.category === activeCategory);
-  }, [activeCategory]);
+  }, [activeCategory, eventsByDate]);
 
   const AREA_OPTIONS = useMemo(
     () => [
@@ -129,13 +128,13 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
     const params = new URLSearchParams(window.location.search);
     const id = params.get('id');
     if (id) {
-      const event = events.find((e) => e.id === parseInt(id, 10));
+      const event = eventsByDate.find((e) => e.id === parseInt(id, 10));
       if (event) {
         setSelectedEvent(event);
         setFocusedEventId(event.id);
       }
     }
-  }, []);
+  }, [eventsByDate]);
 
   const closeEvent = useCallback(() => setSelectedEvent(null), []);
 

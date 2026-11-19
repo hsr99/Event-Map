@@ -1,10 +1,10 @@
 import { useState, useId } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { UploadCloud, CheckCircle2, ArrowLeft, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { UploadCloud, CheckCircle2, ArrowLeft, Sparkles, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import EventCard from '../components/EventCard';
 import { CHENNAI_VENUES } from '../data/venues';
-import { events } from '../data/events';
+import { API_URL, errorMessage } from '../lib/api';
 
 const CATEGORIES = [
   { id: 'concerts', name: 'Concerts & Gigs' },
@@ -14,25 +14,29 @@ const CATEGORIES = [
   { id: 'movies', name: 'Indie Movies & Screenings' },
 ];
 
-export default function SubmitPosterView({ theme }) {
+export default function SubmitPosterView() {
   const navigate = useNavigate();
   const fileInputId = useId();
 
   const [posterPreview, setPosterPreview] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [success, setSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [success, setSuccess] = useState(null); // server message once submitted
+  const [submitError, setSubmitError] = useState('');
+  const [extractNote, setExtractNote] = useState('');
 
   const [formData, setFormData] = useState({
-    title: 'Chennai Indie Music Night',
+    title: '',
     category: 'concerts',
-    area: 'Besant Nagar',
-    venue: "Elliot's Beach Promenade",
-    date: '2026-11-20T19:00:00+05:30',
-    price: 350,
-    isFree: false,
-    description: 'An open-air acoustic indie set right beside the sea breeze, featuring local songwriters and percussionists.',
+    area: '',
+    venue: '',
+    date: '',
+    price: 0,
+    isFree: true,
+    description: '',
     booking_link: '',
+    contact: '',
   });
 
   const handleImageChange = async (e) => {
@@ -43,32 +47,35 @@ export default function SubmitPosterView({ theme }) {
     const url = URL.createObjectURL(file);
     setPosterPreview(url);
 
-    // Call backend VLM extraction if server is up, with smart fallback
+    // Ask the backend to read the poster and pre-fill the form
     setIsExtracting(true);
+    setExtractNote('');
     try {
       const body = new FormData();
       body.append('poster', file);
-      const res = await fetch('http://localhost:8000/api/extract', {
-        method: 'POST',
-        body,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setFormData((prev) => ({
-          ...prev,
-          title: data.title || prev.title,
-          category: data.category || prev.category,
-          venue: data.venue || prev.venue,
-          area: data.area || prev.area,
-          date: data.date || prev.date,
-          price: data.price !== undefined ? data.price : prev.price,
-          isFree: data.is_free !== undefined ? data.is_free : (data.price === 0),
-          description: data.description || prev.description,
-        }));
+      const res = await fetch(`${API_URL}/api/extract`, { method: 'POST', body });
+      if (!res.ok) {
+        setExtractNote(`${await errorMessage(res)} You can still fill in the details by hand.`);
+        return;
+      }
+      const data = await res.json();
+      setFormData((prev) => ({
+        ...prev,
+        title: data.title || prev.title,
+        category: data.category || prev.category,
+        venue: data.venue || prev.venue,
+        area: data.area || prev.area,
+        date: data.date || prev.date,
+        price: data.price !== undefined ? data.price : prev.price,
+        isFree: data.is_free !== undefined ? data.is_free : data.price === 0,
+        description: data.description || prev.description,
+        booking_link: data.booking_link || prev.booking_link,
+      }));
+      if (data.needs_review?.length) {
+        setExtractNote('Filled in from the poster. Please double-check the details before submitting.');
       }
     } catch {
-      // Offline fallback: simulate brief extraction delay
-      await new Promise((r) => setTimeout(r, 600));
+      setExtractNote("Couldn't reach the server to read the poster. Fill in the details by hand.");
     } finally {
       setIsExtracting(false);
     }
@@ -89,7 +96,8 @@ export default function SubmitPosterView({ theme }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
+    setSubmitError('');
+    setIsSubmitting(true);
     try {
       const body = new FormData();
       if (selectedFile) body.append('poster', selectedFile);
@@ -98,46 +106,24 @@ export default function SubmitPosterView({ theme }) {
       body.append('venue', formData.venue);
       body.append('area', formData.area);
       body.append('date', formData.date);
-      body.append('price', String(formData.isFree ? 0 : formData.price));
+      body.append('price', String(formData.isFree ? 0 : Number(formData.price || 0)));
       body.append('is_free', String(formData.isFree));
       body.append('description', formData.description || '');
+      body.append('booking_link', formData.booking_link || '');
+      body.append('contact', formData.contact || '');
 
-      const res = await fetch('http://localhost:8000/api/submit', {
-        method: 'POST',
-        body,
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        events.unshift(saved);
-      } else {
-        throw new Error('API submission failed');
+      const res = await fetch(`${API_URL}/api/submit`, { method: 'POST', body });
+      if (!res.ok) {
+        setSubmitError(await errorMessage(res));
+        return;
       }
+      const saved = await res.json();
+      setSuccess(saved.message || "Thanks! Your event will appear on the map once it's reviewed.");
     } catch {
-      // Fallback: local insertion
-      const selectedVenue = CHENNAI_VENUES.find((v) => v.name === formData.venue);
-      const newEvent = {
-        id: Date.now(),
-        title: formData.title,
-        category: formData.category,
-        area: formData.area,
-        venue: formData.venue,
-        date: formData.date,
-        price: formData.isFree ? 0 : Number(formData.price || 0),
-        isFree: Boolean(formData.isFree),
-        description: formData.description,
-        image_url:
-          posterPreview ||
-          'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=1200&q=80',
-        lat: selectedVenue ? selectedVenue.lat : 13.04,
-        lng: selectedVenue ? selectedVenue.lng : 80.24,
-      };
-      events.unshift(newEvent);
+      setSubmitError("Couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setSuccess(true);
-    setTimeout(() => {
-      navigate('/events');
-    }, 1200);
   };
 
   // Preview event object for EventCard
@@ -181,7 +167,7 @@ export default function SubmitPosterView({ theme }) {
           Drop a Poster
         </h1>
         <p className="mt-4 max-w-2xl text-lg italic text-muted">
-          Upload an event poster or flyer. Jarvis pins it on the Chennai radar map and publishes it across the listings.
+          Upload an event poster or flyer. Jarvis reads the details for you, and once a quick review is done it's pinned on the Chennai map.
         </p>
 
         <div className="mt-14 grid grid-cols-1 gap-12 lg:grid-cols-12">
@@ -231,6 +217,13 @@ export default function SubmitPosterView({ theme }) {
                   className="sr-only"
                 />
               </label>
+
+              {extractNote && !isExtracting && (
+                <p className="mt-3 flex items-start gap-2 text-xs italic text-muted">
+                  <AlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>{extractNote}</span>
+                </p>
+              )}
 
               {isExtracting && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-ivory/80 backdrop-blur-sm dark:bg-ink/80">
@@ -380,19 +373,61 @@ export default function SubmitPosterView({ theme }) {
               />
             </div>
 
+            {/* Booking link & contact */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
+                  Booking / RSVP Link
+                </label>
+                <input
+                  type="url"
+                  value={formData.booking_link}
+                  onChange={(e) => setFormData({ ...formData, booking_link: e.target.value })}
+                  className="w-full border-b border-line bg-transparent py-2.5 outline-none font-serif text-base focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
+                  placeholder="https://"
+                />
+              </div>
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
+                  Your Contact (private)
+                </label>
+                <input
+                  type="text"
+                  value={formData.contact}
+                  onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
+                  className="w-full border-b border-line bg-transparent py-2.5 outline-none font-serif text-base focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
+                  placeholder="Email or phone, in case we have questions"
+                />
+              </div>
+            </div>
+
+            {submitError && (
+              <p role="alert" className="flex items-start gap-2 border border-rose-500/40 bg-rose-500/5 p-3 text-sm text-rose-700 dark:text-rose-300">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <span>{submitError}</span>
+              </p>
+            )}
+
+            {success && (
+              <p role="status" className="flex items-start gap-2 border border-teal-600/40 bg-teal-500/5 p-3 text-sm text-teal-800 dark:text-teal-300">
+                <CheckCircle2 className="mt-0.5 size-4 shrink-0" />
+                <span>{success}</span>
+              </p>
+            )}
+
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={success}
+              disabled={Boolean(success) || isSubmitting}
               className="cursor-pointer group flex items-center justify-center gap-3 bg-ink px-8 py-4 font-display text-xl tracking-[0.14em] text-ivory transition-colors hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-teal-600 dark:bg-bone dark:text-ink dark:hover:bg-teal-400 disabled:opacity-50 w-full sm:w-auto"
             >
               {success ? (
                 <>
                   <CheckCircle2 className="size-5 text-teal-400" />
-                  <span>Added to Chennai Radar!</span>
+                  <span>Submitted for review</span>
                 </>
               ) : (
-                <span>Publish to Chennai Map</span>
+                <span>{isSubmitting ? 'Submitting…' : 'Submit for review'}</span>
               )}
             </button>
           </form>
@@ -408,7 +443,7 @@ export default function SubmitPosterView({ theme }) {
                 <EventCard event={previewEvent} onSelect={() => {}} />
               </div>
               <p className="text-xs italic text-muted max-w-sm">
-                This is how your event will appear in the directory and radar map popups once submitted.
+                This is how your event will appear in the listings and on the map once it's approved.
               </p>
             </div>
           </div>

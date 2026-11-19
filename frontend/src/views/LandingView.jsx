@@ -1,17 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Map as MapIcon, Compass } from 'lucide-react';
 import chennaiMap from '../assets/chennai-map.svg';
 import ChennaiMap from '../components/ChennaiMap';
 import EventDrawer from '../components/EventDrawer';
-import { events } from '../data/events';
-
-const stats = [
-  [events.length, 'Listings'],
-  [new Set(events.map((event) => event.area)).size, 'Neighbourhoods'],
-  [events.filter((event) => event.isFree).length, 'Free to attend'],
-];
+import { useEvents } from '../data/eventsContext';
 
 const container = {
   hidden: { opacity: 0 },
@@ -40,6 +34,15 @@ export default function LandingView({ theme, onToggleTheme }) {
   const navigate = useNavigate();
   const [mapMode, setMapMode] = useState('vector'); // 'vector' | 'live'
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const { events } = useEvents();
+  const stats = useMemo(
+    () => [
+      [events.length, 'Listings'],
+      [new Set(events.map((event) => event.area)).size, 'Neighbourhoods'],
+      [events.filter((event) => event.isFree).length, 'Free to attend'],
+    ],
+    [events],
+  );
 
   return (
     <>

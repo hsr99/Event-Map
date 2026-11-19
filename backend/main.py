@@ -1,75 +1,106 @@
 """
-backend/main.py - FastAPI Application Server for Chennai Event Map.
-Provides endpoints for event discovery, poster extraction, event submission, and venues.
-"""
-import os
-import shutil
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+backend/main.py - FastAPI server for the Chennai Event Map.
 
-from backend.database import (
-    init_db,
-    get_events,
-    get_event_by_id,
-    insert_event,
-    get_venues,
-    insert_report,
-)
+Run from the repo root:
+    uvicorn backend.main:app --reload --port 8000
+
+Visitors read published events straight from Supabase; this API handles the
+things that need secrets or validation: poster extraction, submissions (which
+land in the review queue), and reports.
+"""
+import hashlib
+import os
+from datetime import datetime
+from typing import Optional
+from urllib.parse import urlparse
+
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from backend import store
 from backend.extractor import extract_poster_details
 from backend.geocoder import resolve_venue_coordinates
-
-ROOT_DIR = Path(__file__).resolve().parent.parent
-POSTERS_DIR = ROOT_DIR / "frontend" / "public" / "posters"
-POSTERS_DIR.mkdir(parents=True, exist_ok=True)
+from backend.posters import MAX_POSTER_BYTES, InvalidPoster, inspect_poster
 
 app = FastAPI(
     title="Jarvis Chennai Event Map API",
-    description="Backend API powering Chennai event discovery, poster extraction, and submissions.",
-    version="1.0.0",
+    description="Poster extraction, event submissions and reports for the Chennai Event Map.",
+    version="2.0.0",
 )
 
-# Enable CORS for local dev server and frontend hosting
+# Comma-separated list of sites allowed to call this API from a browser.
+DEFAULT_ORIGINS = "http://localhost:5173,http://localhost:5179,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-# Serve uploaded posters statically
-app.mount("/posters", StaticFiles(directory=str(POSTERS_DIR)), name="posters")
+
+@app.exception_handler(store.StoreNotConfigured)
+async def store_not_configured(_: Request, exc: store.StoreNotConfigured):
+    return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
-@app.on_event("startup")
-def on_startup():
-    init_db()
+async def read_poster(upload: UploadFile) -> bytes:
+    data = await upload.read(MAX_POSTER_BYTES + 1)
+    try:
+        inspect_poster(data)
+    except InvalidPoster as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return data
 
 
+def clean_text(value: Optional[str], field: str, max_len: int, required: bool = False) -> str:
+    text = (value or "").strip()
+    if required and not text:
+        raise HTTPException(status_code=422, detail=f"{field} is required.")
+    if len(text) > max_len:
+        raise HTTPException(status_code=422, detail=f"{field} must be at most {max_len} characters.")
+    return text
+
+
+def parse_datetime(value: Optional[str], field: str, required: bool = False) -> Optional[str]:
+    text = (value or "").strip()
+    if not text:
+        if required:
+            raise HTTPException(status_code=422, detail=f"{field} is required.")
+        return None
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"{field} must be an ISO date-time.") from exc
+    if parsed.tzinfo is None:
+        text += "+05:30"  # form inputs are Chennai local time
+    return text
+
+
+# --------------------------------------------------------------------------- #
+# Routes
+# --------------------------------------------------------------------------- #
 @app.get("/api/health")
 def health_check():
-    return {"status": "ok", "service": "Jarvis Chennai Event Map API"}
+    return {"status": "ok", "storage_configured": store.is_configured()}
 
 
 @app.get("/api/events")
 def list_events(
-    category: Optional[str] = Query(None, description="Category filter (concerts, tech-events, etc.)"),
+    category: Optional[str] = Query(None, description="Category filter (concerts, tech-events, ...)"),
     area: Optional[str] = Query(None, description="Chennai area filter"),
-    is_free: Optional[bool] = Query(None, description="Filter for free events"),
-    q: Optional[str] = Query(None, description="Search keyword in title, venue, area"),
+    is_free: Optional[bool] = Query(None, description="Only free (true) or ticketed (false) events"),
+    q: Optional[str] = Query(None, max_length=100, description="Search title, venue, area, description"),
 ):
-    """Retrieve filtered list of published events."""
-    return get_events(category=category, area=area, is_free=is_free, query=q)
+    """Published events, soonest first."""
+    return store.list_events(category=category, area=area, is_free=is_free, query=q)
 
 
 @app.get("/api/events/{event_id}")
-def get_single_event(event_id: int):
-    """Retrieve details for a single event."""
-    event = get_event_by_id(event_id)
+def get_event(event_id: int):
+    event = store.get_event(event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
@@ -77,90 +108,104 @@ def get_single_event(event_id: int):
 
 @app.post("/api/extract")
 async def extract_poster(poster: UploadFile = File(...)):
-    """Upload a poster and extract event metadata using the VLM pipeline."""
-    contents = await poster.read()
-    if not contents:
-        raise HTTPException(status_code=400, detail="Empty image file uploaded")
+    """Read a poster with the vision models and return suggested form values. Stores nothing."""
+    data = await read_poster(poster)
+    details = extract_poster_details(data, filename=poster.filename or "")
+    details.pop("raw", None)
 
-    details = extract_poster_details(contents, filename=poster.filename or "")
-    details.pop("raw", None)  # unmapped model output; not needed by the form
-
-    # Geocode venue (a known venue also gives its canonical name)
     geo = resolve_venue_coordinates(details.get("venue", ""), details.get("area", ""))
-    details["lat"] = geo["lat"]
-    details["lng"] = geo["lng"]
+    details["lat"], details["lng"] = geo["lat"], geo["lng"]
     details["location_precision"] = geo["precision"]
     if geo.get("venue"):
         details["venue"] = geo["venue"]
     if geo["precision"] == "venue" or not details.get("area"):
         details["area"] = geo["area"]
-
     return details
 
 
-@app.post("/api/submit")
+@app.post("/api/submit", status_code=201)
 async def submit_event(
-    poster: UploadFile = File(None),
+    poster: Optional[UploadFile] = File(None),
     title: str = Form(...),
     category: str = Form(...),
     venue: str = Form(...),
-    area: str = Form(...),
+    area: Optional[str] = Form(""),  # filled from the venue when blank
     date: str = Form(...),
     end_date: Optional[str] = Form(None),
     price: int = Form(0),
     is_free: bool = Form(False),
     description: Optional[str] = Form(""),
     booking_link: Optional[str] = Form(""),
-    image_url: Optional[str] = Form(None),
+    contact: Optional[str] = Form(""),
 ):
-    """Submits a new event, saves the poster, resolves GPS coordinates, and records to DB."""
-    final_image_url = image_url or ""
+    """Submit an event. It's saved as 'review' and appears on the site once approved."""
+    if category not in store.CATEGORIES:
+        raise HTTPException(status_code=422, detail="Unknown category.")
+    if price < 0:
+        raise HTTPException(status_code=422, detail="Price can't be negative.")
+    link = clean_text(booking_link, "Booking link", 500)
+    if link and urlparse(link).scheme not in ("http", "https"):
+        raise HTTPException(status_code=422, detail="Booking link must start with http:// or https://")
 
-    # If an image file was uploaded, save it to public/posters/
-    if poster and poster.filename:
-        safe_filename = f"{int(datetime.now().timestamp())}_{poster.filename.replace(' ', '_')}"
-        dest = POSTERS_DIR / safe_filename
-        with open(dest, "wb") as f:
-            shutil.copyfileobj(poster.file, f)
-        final_image_url = f"/posters/{safe_filename}"
+    venue_text = clean_text(venue, "Venue", 200, required=True)
+    area_text = clean_text(area, "Area", 100)
+    geo = resolve_venue_coordinates(venue_text, area_text)
+    free = is_free or price == 0
 
-    # Resolve coordinates
-    geo = resolve_venue_coordinates(venue, area)
-
-    event_payload = {
-        "title": title.strip(),
-        "category": category.strip(),
-        "venue": venue.strip(),
-        "area": area.strip() or geo["area"],
-        "date": date.strip(),
-        "end_date": end_date.strip() if end_date else None,
-        "price": price,
-        "isFree": is_free or price == 0,
-        "description": description.strip() if description else "",
-        "booking_link": booking_link.strip() if booking_link else "",
-        "image_url": final_image_url or "/posters/openmic.jpeg",
+    event = {
+        "title": clean_text(title, "Title", 200, required=True),
+        "category": category,
+        "venue": geo.get("venue") or venue_text,
+        "area": area_text or geo["area"],
+        "date": parse_datetime(date, "Date", required=True),
+        "end_date": parse_datetime(end_date, "End date"),
+        "price": 0 if free else price,
+        "is_free": free,
+        "description": clean_text(description, "Description", 2000),
+        "booking_link": link,
         "lat": geo["lat"],
         "lng": geo["lng"],
-        "is_featured": 1 if price > 0 else 0,
-        "status": "published",
+        "status": "review",
     }
 
-    event_id = insert_event(event_payload)
-    event_payload["id"] = event_id
-    return event_payload
+    poster_info = None
+    if poster and poster.filename:
+        data = await read_poster(poster)
+        poster_info = inspect_poster(data)
+        if store.find_submission_by_hash(poster_info.sha256):
+            raise HTTPException(status_code=409, detail="This poster has already been submitted.")
+        event["image_url"] = store.upload_poster(data, poster_info)
+
+    try:
+        created = store.create_event(
+            event,
+            source="web_form",
+            poster=poster_info,
+            submitter_contact=clean_text(contact, "Contact", 200),
+        )
+    except store.DuplicatePoster as exc:
+        raise HTTPException(status_code=409, detail="This poster has already been submitted.") from exc
+
+    return {
+        "id": created["id"],
+        "status": created["status"],
+        "message": "Thanks! Your event will appear on the map once it's reviewed.",
+    }
 
 
 @app.get("/api/venues")
 def list_venues():
-    """Retrieve list of verified Chennai venues for autocomplete."""
-    return get_venues()
+    """Verified Chennai venues, for autocomplete."""
+    return store.list_venues()
 
 
-@app.post("/api/reports")
-def report_event(
-    event_id: int = Form(...),
-    reason: str = Form(...),
-):
-    """Submit an inaccuracy or spam report for an event."""
-    report_id = insert_report(event_id, reason)
+@app.post("/api/reports", status_code=201)
+def report_event(request: Request, event_id: int = Form(...), reason: str = Form(...)):
+    """Flag an event as spam or inaccurate."""
+    if not store.get_event(event_id):
+        raise HTTPException(status_code=404, detail="Event not found")
+    ip = request.client.host if request.client else ""
+    salt = os.environ.get("REPORT_IP_SALT", "jarvis")
+    ip_hash = hashlib.sha256(f"{salt}:{ip}".encode()).hexdigest() if ip else ""
+    report_id = store.insert_report(event_id, clean_text(reason, "Reason", 1000, required=True), ip_hash)
     return {"status": "ok", "report_id": report_id, "message": "Report received"}
