@@ -88,6 +88,10 @@ Visitor's browser ──(anon key, read-only: published events)──▶ Supabas
 - Visitors can only **read published events**. They can't write to the database or upload files directly.
 - Every submission starts as **`review`** and only appears on the site after you approve it.
 - A **poster on its own is enough** to submit. The backend reads anything left blank off the poster. If it can't find the date or venue, the event still lands in review, marked with what's missing; it can't be published until that's filled in.
+- **Duplicates** are caught two ways (`backend/dedupe.py`):
+  - **Same poster:** besides the exact file hash, each poster gets a look-alike fingerprint that survives resizing, re-saving and screenshots. A copy of the poster of an **upcoming** event that's already live or in review is refused ("This event is already on the map"). A look-alike poster is only refused when it's also for the same day with a similar title, so a series (same design, new date), a festival line-up (same design, different act) or a repeat of a past event gets through, flagged for review.
+  - **Same event, different poster:** a similar title on the same day, or the same venue and day with a similar title. These aren't refused; they get a **Possible duplicate** badge in `/admin` showing the matching event, so you decide. `tools/ingest_posters.py` never auto-publishes one.
+  - After adding the fingerprint column, run `python tools/backfill_fingerprints.py` once to fingerprint posters saved earlier.
 - **Review at `/admin`** on the site (not linked anywhere). Sign in with `ADMIN_TOKEN`, then check each poster against what was read, fix fields, and Publish, Hide or Delete. Visitors never need to sign in.
 - Private intake details (submitter contact, raw model output, poster hash) are kept in the `submissions` table, which visitors can never read.
 - `frontend/src/data/events.js` is a bundled **fallback snapshot**. It's shown on first paint and whenever Supabase is unreachable.

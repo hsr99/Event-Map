@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from backend import store  # noqa: E402
+from backend import dedupe, store  # noqa: E402
 from backend.extractor import extract_poster_details  # noqa: E402
 from backend.geocoder import resolve_venue_coordinates  # noqa: E402
 from backend.posters import InvalidPoster, inspect_poster  # noqa: E402
@@ -75,6 +75,17 @@ def run_ingestion(dry_run: bool = False, backend: str = "auto", publish_all: boo
         print(f"  - {path.name}: extracting...")
         details = extract_poster_details(data, filename=path.name, backend=backend)
         event, review = build_event(details, publish_all)
+
+        matches = store.find_duplicates(event, info.fingerprint)
+        block = dedupe.blocking_match(matches)
+        if block:
+            print(f"      already on record as event {block['id']} ('{(block['title'] or '')[:40]}'): skipped")
+            skipped += 1
+            continue
+        if matches:
+            # Never auto-publish a possible duplicate; let a person decide.
+            event["status"] = "review"
+            review.append("possible duplicate of " + ", ".join(f"#{m['id']}" for m in matches[:3]))
 
         print(f"      [{details['backend']}] '{event['title'][:40]}' | {event['category']} | "
               f"{event['date']} | {event['area']} | Rs.{event['price']} -> {event['status']}")

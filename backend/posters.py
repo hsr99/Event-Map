@@ -8,8 +8,11 @@ where anything is stored.
 import hashlib
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Optional
 
 from PIL import Image, UnidentifiedImageError
+
+from backend.dedupe import poster_fingerprint
 
 MAX_POSTER_BYTES = 10 * 1024 * 1024  # matches the storage bucket's file_size_limit
 
@@ -30,6 +33,7 @@ class PosterInfo:
     sha256: str
     ext: str
     content_type: str
+    fingerprint: Optional[str] = None  # look-alike hash, see backend/dedupe.py
 
     @property
     def storage_path(self) -> str:
@@ -51,4 +55,4 @@ def inspect_poster(data: bytes) -> PosterInfo:
     if fmt not in ALLOWED_FORMATS:
         raise InvalidPoster("Posters must be JPG, PNG or WEBP.")
     ext, content_type = ALLOWED_FORMATS[fmt]
-    return PosterInfo(hashlib.sha256(data).hexdigest(), ext, content_type)
+    return PosterInfo(hashlib.sha256(data).hexdigest(), ext, content_type, poster_fingerprint(data))

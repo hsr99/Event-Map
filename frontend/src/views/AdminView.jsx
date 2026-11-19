@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import {
   AlertCircle,
   CheckCircle2,
+  Copy,
   ChevronDown,
   EyeOff,
   ExternalLink,
@@ -41,6 +42,8 @@ const FIELD_LABELS = {
   lat: 'map pin',
   lng: 'map pin',
 };
+
+const STATUS_NAMES = { published: 'Live', review: 'In review', hidden: 'Hidden', expired: 'Expired' };
 
 const PRECISION_NOTES = {
   venue: { text: 'Exact venue pin', tone: 'ok' },
@@ -219,6 +222,7 @@ function EventEditor({ event, token, theme, open, onToggle, onChanged, onRemoved
   const extractedBy = sub.extracted_data?._backend || sub.extracted_data?.backend;
   const precision = PRECISION_NOTES[event.location_precision];
   const hasPin = typeof event.lat === 'number' && typeof event.lng === 'number';
+  const duplicates = event.duplicates || [];
 
   const run = async (label, fn) => {
     setBusy(label);
@@ -285,6 +289,11 @@ function EventEditor({ event, token, theme, open, onToggle, onChanged, onRemoved
             ) : (
               <span className="border border-teal-600/50 px-1.5 py-0.5 text-teal-700 dark:text-teal-400">Ready</span>
             )}
+            {duplicates.length > 0 && (
+              <span className="flex items-center gap-1 border border-rose-500/60 bg-rose-500/5 px-1.5 py-0.5 text-rose-700 dark:text-rose-300">
+                <Copy className="size-3" /> Possible duplicate
+              </span>
+            )}
             {event.location_precision === 'city' && (
               <span className="border border-rose-500/50 px-1.5 py-0.5 text-rose-700 dark:text-rose-300">Rough pin</span>
             )}
@@ -296,6 +305,35 @@ function EventEditor({ event, token, theme, open, onToggle, onChanged, onRemoved
       </button>
 
       {/* Editor */}
+      {open && duplicates.length > 0 && (
+        <div className="border-t border-rose-500/40 bg-rose-500/[0.04] p-4 sm:px-6">
+          <p className="flex items-center gap-2 text-sm font-medium text-rose-700 dark:text-rose-300">
+            <Copy className="size-4" /> Looks like {duplicates.length === 1 ? 'an event' : 'events'} already on record
+          </p>
+          <p className="mt-1 text-xs text-muted">
+            If it's the same event, delete this one. A series (same design, new date) is fine to keep.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {duplicates.map((d) => (
+              <li key={d.id} className="flex items-center gap-3 border border-line bg-ivory p-2 dark:bg-ink">
+                <div className="aspect-[3/4] w-10 shrink-0 overflow-hidden border border-line bg-ink/5 dark:bg-bone/5">
+                  {d.image_url && <img src={d.image_url} alt="" className="size-full object-cover" loading="lazy" />}
+                </div>
+                <div className="min-w-0 flex-1 text-sm">
+                  <p className="truncate font-medium">{d.title || <span className="italic text-muted">Untitled poster</span>}</p>
+                  <p className="truncate text-xs text-muted">
+                    #{d.id} · {STATUS_NAMES[d.status] || d.status} ·{' '}
+                    {d.date ? formatDate(d.date) : 'No date'} · {(d.venue || '').split(',')[0] || 'No venue'}
+                  </p>
+                </div>
+                <span className="shrink-0 text-right text-[10px] uppercase tracking-wider text-rose-700 dark:text-rose-300">
+                  {d.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {open && (
         <div className="grid grid-cols-1 gap-8 border-t border-line p-4 sm:p-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
           <div className="space-y-4">

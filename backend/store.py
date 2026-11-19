@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 
+from backend import dedupe
 from backend.posters import PosterInfo
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -38,7 +39,10 @@ WRITABLE_EVENT_FIELDS = (
 
 # An event can sit in review with any of these blank, but can't be published without them.
 REQUIRED_TO_PUBLISH = ("title", "category", "venue", "area", "date", "lat", "lng")
-ADMIN_SELECT = f"{EVENT_COLUMNS},submissions(source,submitter_contact,poster_path,extracted_data,created_at)"
+ADMIN_SELECT = (
+    f"{EVENT_COLUMNS},"
+    "submissions(source,submitter_contact,poster_path,poster_fingerprint,extracted_data,created_at)"
+)
 
 
 class StoreNotConfigured(RuntimeError):
@@ -124,11 +128,43 @@ def get_event(event_id: int, status: Optional[str] = "published") -> Optional[Di
 
 
 def find_submission_by_hash(poster_hash: str) -> Optional[Dict[str, Any]]:
+    """The submission with this exact poster file, plus its event's `status`."""
     rows = (
-        client().table("submissions").select("id,event_id")
+        client().table("submissions").select("id,event_id,events(status)")
         .eq("poster_hash", poster_hash).limit(1).execute().data
     )
-    return rows[0] if rows else None
+    if not rows:
+        return None
+    row = rows[0]
+    event = row.pop("events", None) or {}
+    row["status"] = event.get("status") if isinstance(event, dict) else None
+    return row
+
+
+def dedupe_candidates() -> List[Dict[str, Any]]:
+    """Every event with its poster fingerprint, for duplicate checks."""
+    rows = (
+        client().table("events")
+        .select("id,title,venue,date,status,image_url,submissions(poster_fingerprint)")
+        .order("id", desc=True).limit(5000).execute().data
+    )
+    for row in rows:
+        sub = row.pop("submissions", None)
+        if isinstance(sub, list):
+            sub = sub[0] if sub else None
+        row["poster_fingerprint"] = (sub or {}).get("poster_fingerprint")
+    return rows
+
+
+def find_duplicates(
+    event: Dict[str, Any],
+    fingerprint: Optional[str],
+    exclude_id: Optional[int] = None,
+    candidates: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    if candidates is None:
+        candidates = dedupe_candidates()
+    return dedupe.find_matches(event, fingerprint, candidates, exclude_id=exclude_id)
 
 
 def create_event(
@@ -161,6 +197,7 @@ def create_event(
             "submitter_contact": submitter_contact or None,
             "poster_path": poster.storage_path if poster else None,
             "poster_hash": poster.sha256 if poster else None,
+            "poster_fingerprint": poster.fingerprint if poster else None,
             "extracted_data": extracted_data,
         }).execute()
     except Exception:
@@ -183,13 +220,16 @@ def missing_to_publish(event: Dict[str, Any]) -> List[str]:
     return [f for f in REQUIRED_TO_PUBLISH if event.get(f) in (None, "")]
 
 
-def _admin_row(row: Dict[str, Any]) -> Dict[str, Any]:
+def _admin_row(row: Dict[str, Any], candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
     sub = row.pop("submissions", None)
     if isinstance(sub, list):
         sub = sub[0] if sub else None
+    sub = dict(sub or {})
+    fingerprint = sub.pop("poster_fingerprint", None)
     row = with_frontend_fields(row)
-    row["submission"] = sub
+    row["submission"] = sub or None
     row["missing"] = missing_to_publish(row)
+    row["duplicates"] = find_duplicates(row, fingerprint, exclude_id=row["id"], candidates=candidates)
     return row
 
 
@@ -200,12 +240,14 @@ def list_admin_events(status: str = "review") -> List[Dict[str, Any]]:
     query = client().table("events").select(ADMIN_SELECT).eq("status", status)
     # Review queue: oldest first. Everything else: by event date.
     query = query.order("created_at") if status == "review" else query.order("date", desc=True)
-    return [_admin_row(r) for r in query.limit(500).execute().data]
+    rows = query.limit(500).execute().data
+    candidates = dedupe_candidates()
+    return [_admin_row(r, candidates) for r in rows]
 
 
 def get_admin_event(event_id: int) -> Optional[Dict[str, Any]]:
     rows = client().table("events").select(ADMIN_SELECT).eq("id", event_id).limit(1).execute().data
-    return _admin_row(rows[0]) if rows else None
+    return _admin_row(rows[0], dedupe_candidates()) if rows else None
 
 
 def update_event(event_id: int, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:

@@ -22,7 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from backend import store
+from backend import dedupe, store
 from backend.extractor import extract_poster_details
 from backend.geocoder import resolve_venue_coordinates
 from backend.posters import MAX_POSTER_BYTES, InvalidPoster, inspect_poster
@@ -141,6 +141,12 @@ def from_extraction(details: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def already_there(status: Optional[str]) -> str:
+    if status in ("published", "review"):
+        return dedupe.duplicate_message({"status": status})
+    return "This poster has already been submitted."
+
+
 def describe_missing(fields) -> str:
     """['venue', 'area', 'date', 'lat', 'lng'] -> 'date, venue and map pin'."""
     names = []
@@ -257,11 +263,18 @@ async def submit_event(
     contact_text = clean_text(contact, "Contact", 200)
 
     data = poster_info = None
+    candidates = None
     if poster and poster.filename:
         data = await read_poster(poster)
         poster_info = inspect_poster(data)
-        if store.find_submission_by_hash(poster_info.sha256):
-            raise HTTPException(status_code=409, detail="This poster has already been submitted.")
+        existing = store.find_submission_by_hash(poster_info.sha256)
+        if existing:
+            raise HTTPException(status_code=409, detail=already_there(existing.get("status")))
+        # A resized or re-saved copy of a poster we already have: stop before reading it again.
+        candidates = store.dedupe_candidates()
+        early = dedupe.blocking_match(dedupe.find_matches(event, poster_info.fingerprint, candidates))
+        if early:
+            raise HTTPException(status_code=409, detail=dedupe.duplicate_message(early))
     elif not (event["title"] and event["date"] and event["venue"]):
         raise HTTPException(status_code=422, detail="Add a poster, or fill in the event title, date and venue.")
 
@@ -289,7 +302,12 @@ async def submit_event(
     event["venue"], event["area"], geo = locate(event["venue"], event["area"])
     event["lat"], event["lng"] = geo.get("lat"), geo.get("lng")
 
+    # Same poster for the same day, now that we know the date. Lookalikes with a
+    # different poster or date still go through; they're flagged on the review page.
     if poster_info:
+        match = dedupe.blocking_match(dedupe.find_matches(event, poster_info.fingerprint, candidates or []))
+        if match:
+            raise HTTPException(status_code=409, detail=dedupe.duplicate_message(match))
         event["image_url"] = store.upload_poster(data, poster_info)
 
     try:
@@ -301,7 +319,7 @@ async def submit_event(
             submitter_contact=contact_text,
         )
     except store.DuplicatePoster as exc:
-        raise HTTPException(status_code=409, detail="This poster has already been submitted.") from exc
+        raise HTTPException(status_code=409, detail=already_there(None)) from exc
 
     missing = [f for f in store.missing_to_publish(event) if f not in ("lat", "lng")]
     message = "Thanks! Your event will appear on the map once it's reviewed."

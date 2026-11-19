@@ -96,9 +96,13 @@ CREATE TABLE IF NOT EXISTS public.submissions (
     submitter_contact TEXT,
     poster_path       TEXT,                 -- object path inside the `posters` bucket
     poster_hash       TEXT UNIQUE,          -- sha256 of the image; blocks duplicate posters
+    poster_fingerprint TEXT,                -- look-alike hash; catches resized/re-saved copies
     extracted_data    JSONB,                -- raw vision-model output, for auditing
     created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Older versions lacked the look-alike fingerprint
+ALTER TABLE public.submissions ADD COLUMN IF NOT EXISTS poster_fingerprint TEXT;
 
 -- 5. REPORTS -------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.reports (
