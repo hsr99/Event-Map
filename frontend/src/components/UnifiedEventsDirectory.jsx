@@ -42,19 +42,41 @@ const matchesBudget = (event, budget) =>
 const matchesArea = (event, area) =>
   area === 'All' || event.area === area;
 
-const matchesTime = (event, timeFilter) => {
-  if (timeFilter === 'all') return true;
-  const d = new Date(event.date);
-  const day = d.getDay();
-  const hour = d.getHours();
+// Time windows are worked out in Chennai time (UTC+5:30), whatever the visitor's device is set to.
+const IST_OFFSET_MS = 330 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-  if (timeFilter === 'weekend') {
-    return day === 0 || day === 6 || (day === 5 && hour >= 18);
-  }
+// Midnight (Chennai) at the start of the day containing `ms`, plus the weekday (0 = Sunday).
+const chennaiDay = (ms) => {
+  const shifted = new Date(ms + IST_OFFSET_MS);
+  const midnight = Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) - IST_OFFSET_MS;
+  return { midnight, weekday: shifted.getUTCDay() };
+};
+
+// [start, end) in epoch ms for a time filter, relative to now.
+const timeWindow = (timeFilter, now = Date.now()) => {
+  const { midnight, weekday } = chennaiDay(now);
   if (timeFilter === 'tonight') {
-    return hour >= 17;
+    // Today from 5 pm until 4 am tomorrow.
+    return [midnight + 17 * 60 * 60 * 1000, midnight + DAY_MS + 4 * 60 * 60 * 1000];
   }
-  return true;
+  if (timeFilter === 'weekend') {
+    // Friday 6 pm to Monday midnight: this one if we're in it, otherwise the next.
+    const daysToFriday = weekday === 0 ? -2 : weekday === 6 ? -1 : 5 - weekday;
+    const friday = midnight + daysToFriday * DAY_MS;
+    // Mid-weekend, earlier days are over: start from today.
+    return [Math.max(friday + 18 * 60 * 60 * 1000, midnight), friday + 3 * DAY_MS];
+  }
+  return null;
+};
+
+const matchesTime = (event, range) => {
+  if (!range) return true;
+  const start = new Date(event.date).getTime();
+  const endValue = event.end_date || event.endDate;
+  const end = endValue ? new Date(endValue).getTime() : start;
+  // Starts inside the window, or is still running when it opens.
+  return start < range[1] && end >= range[0];
 };
 
 const CATEGORY_TITLES = {
@@ -151,12 +173,13 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
 
   const visibleEvents = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const range = timeWindow(timeFilter);
     return categoryEvents.filter((event) => {
       const basicMatch =
         matchesQuery(event, q) &&
         matchesBudget(event, budget) &&
         matchesArea(event, area) &&
-        matchesTime(event, timeFilter);
+        matchesTime(event, range);
 
       if (!basicMatch) return false;
       if (boundsIds && boundsIds.length > 0) {
