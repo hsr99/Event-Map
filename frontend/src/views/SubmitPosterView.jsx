@@ -36,6 +36,8 @@ export default function SubmitPosterView() {
     isFree: false,
     description: '',
     booking_link: '',
+    contact_phone: '',
+    instagram: '',
     contact: '',
   });
 
@@ -70,6 +72,8 @@ export default function SubmitPosterView() {
         isFree: data.is_free !== undefined ? data.is_free : prev.isFree,
         description: data.description || prev.description,
         booking_link: data.booking_link || prev.booking_link,
+        contact_phone: data.contact_phone || prev.contact_phone,
+        instagram: data.instagram || prev.instagram,
       }));
       const unread = [!data.date && 'date', !data.venue && 'venue'].filter(Boolean);
       setExtractNote(
@@ -113,6 +117,8 @@ export default function SubmitPosterView() {
       body.append('is_free', String(formData.isFree));
       body.append('description', formData.description || '');
       body.append('booking_link', formData.booking_link || '');
+      body.append('contact_phone', formData.contact_phone || '');
+      body.append('instagram', formData.instagram || '');
       body.append('contact', formData.contact || '');
 
       const res = await fetch(`${API_URL}/api/submit`, { method: 'POST', body });
@@ -385,6 +391,34 @@ export default function SubmitPosterView() {
                 className="w-full border border-line bg-transparent p-3 outline-none font-serif text-sm focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
                 placeholder="Briefly describe the experience, artists, and vibe..."
               />
+            </div>
+
+            {/* Organiser's public contact, for bookings */}
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
+                  Organiser's Instagram
+                </label>
+                <input
+                  type="text"
+                  value={formData.instagram}
+                  onChange={(e) => setFormData({ ...formData, instagram: e.target.value })}
+                  className="w-full border-b border-line bg-transparent py-2.5 outline-none font-serif text-base focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
+                  placeholder="@handle"
+                />
+              </div>
+              <div>
+                <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
+                  Organiser's Phone (for bookings)
+                </label>
+                <input
+                  type="tel"
+                  value={formData.contact_phone}
+                  onChange={(e) => setFormData({ ...formData, contact_phone: e.target.value })}
+                  className="w-full border-b border-line bg-transparent py-2.5 outline-none font-serif text-base focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
+                  placeholder="98765 43210"
+                />
+              </div>
             </div>
 
             {/* Booking link & contact */}

@@ -14,7 +14,6 @@ import hmac
 import os
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
-from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
@@ -23,6 +22,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from backend import dedupe, store
+from backend.contacts import normalize_instagram, normalize_link, normalize_phone
 from backend.extractor import extract_poster_details
 from backend.geocoder import resolve_venue_coordinates
 from backend.posters import MAX_POSTER_BYTES, InvalidPoster, inspect_poster
@@ -51,10 +51,12 @@ LNG_RANGE = (79.6, 80.6)
 
 # Poster reading uses the free vision-model quota: cap it per visitor and overall,
 # so one script can't use it all up. Submissions and reports are capped per visitor.
-READS_PER_VISITOR = (12, 15 * 60)    # 12 reads per 15 minutes
+# "Per visitor" means per IP address, and mobile networks put many people behind
+# one address, so these only stop floods; the overall cap protects the quota.
+READS_PER_VISITOR = (40, 15 * 60)    # 40 reads per 15 minutes
 READS_OVERALL = (200, 60 * 60)       # 200 reads per hour across everyone
-SUBMITS_PER_VISITOR = (10, 60 * 60)
-REPORTS_PER_VISITOR = (20, 60 * 60)
+SUBMITS_PER_VISITOR = (40, 60 * 60)
+REPORTS_PER_VISITOR = (40, 60 * 60)
 SLOW_DOWN = "Too many requests from your connection. Please wait a few minutes and try again."
 
 
@@ -105,9 +107,12 @@ def parse_datetime(value: Optional[str], field: str, required: bool = False) -> 
 
 def check_link(value: Optional[str]) -> str:
     link = clean_text(value, "Booking link", 500)
-    if link and urlparse(link).scheme not in ("http", "https"):
-        raise HTTPException(status_code=422, detail="Booking link must start with http:// or https://")
-    return link
+    if not link:
+        return link
+    fixed = normalize_link(link)  # 'bit.ly/xyz' -> 'https://bit.ly/xyz'
+    if not fixed:
+        raise HTTPException(status_code=422, detail="Booking link must be a web address, e.g. https://...")
+    return fixed
 
 
 def check_category(value: Optional[str]) -> Optional[str]:
@@ -144,14 +149,35 @@ def from_extraction(details: Dict[str, Any]) -> Dict[str, Any]:
         out["category"] = details["category"]
     if raw.get("date"):
         out["date"], out["end_date"] = details["date"], details.get("end_date")
-    for key in ("venue", "area", "description", "booking_link"):
+    for key in ("venue", "area", "description"):
         if details.get(key):
             out[key] = details[key]
     if raw.get("ticket_price"):
         out["price"], out["is_free"] = details["price"], details["is_free"]
-    if out.get("booking_link") and urlparse(out["booking_link"]).scheme not in ("http", "https"):
-        out.pop("booking_link")
+    for key, clean in (("booking_link", normalize_link), ("contact_phone", normalize_phone),
+                       ("instagram", normalize_instagram)):
+        value = clean(details.get(key))
+        if value:
+            out[key] = value
     return out
+
+
+def check_phone(value: Optional[str]) -> Optional[str]:
+    if not (value or "").strip():
+        return None
+    phone = normalize_phone(value)
+    if not phone:
+        raise HTTPException(status_code=422, detail="That phone number doesn't look right. Use a 10-digit number.")
+    return phone
+
+
+def check_instagram(value: Optional[str]) -> Optional[str]:
+    if not (value or "").strip():
+        return None
+    handle = normalize_instagram(value)
+    if not handle:
+        raise HTTPException(status_code=422, detail="That Instagram handle doesn't look right, e.g. @chennaigigs.")
+    return handle
 
 
 def already_there(status: Optional[str]) -> str:
@@ -224,6 +250,8 @@ async def extract_poster(request: Request, poster: UploadFile = File(...)):
         "area": area or "",
         "description": found.get("description", ""),
         "booking_link": found.get("booking_link", ""),
+        "contact_phone": found.get("contact_phone", ""),
+        "instagram": found.get("instagram", ""),
         "needs_review": details.get("needs_review", []),
         "backend": details.get("backend"),
         "lat": geo.get("lat"),
@@ -249,6 +277,8 @@ async def submit_event(
     is_free: Optional[str] = Form(""),
     description: Optional[str] = Form(""),
     booking_link: Optional[str] = Form(""),
+    contact_phone: Optional[str] = Form(""),
+    instagram: Optional[str] = Form(""),
     contact: Optional[str] = Form(""),
 ):
     """Submit an event. A poster on its own is enough: blank fields are read from it.
@@ -276,6 +306,8 @@ async def submit_event(
         "end_date": parse_datetime(end_date, "End date"),
         "description": clean_text(description, "Description", 2000),
         "booking_link": check_link(booking_link),
+        "contact_phone": check_phone(contact_phone),
+        "instagram": check_instagram(instagram),
         "status": "review",
     }
     contact_text = clean_text(contact, "Contact", 200)
@@ -305,7 +337,8 @@ async def submit_event(
         details = await run_in_threadpool(extract_poster_details, data, poster.filename or "")
         extracted_raw = details.get("raw")
         found = from_extraction(details)
-        for key in ("title", "category", "venue", "area", "date", "end_date", "description", "booking_link"):
+        for key in ("title", "category", "venue", "area", "date", "end_date", "description",
+                    "booking_link", "contact_phone", "instagram"):
             if not event.get(key) and found.get(key):
                 event[key] = found[key]
 
@@ -409,6 +442,8 @@ class EventEdit(BaseModel):
     is_free: Optional[bool] = None
     description: Optional[str] = None
     booking_link: Optional[str] = None
+    contact_phone: Optional[str] = None
+    instagram: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
     is_featured: Optional[bool] = None
@@ -460,6 +495,10 @@ def admin_edit_event(event_id: int, edit: EventEdit):
         fields["description"] = clean_text(given["description"], "Description", 2000)
     if "booking_link" in given:
         fields["booking_link"] = check_link(given["booking_link"])
+    if "contact_phone" in given:
+        fields["contact_phone"] = check_phone(given["contact_phone"])
+    if "instagram" in given:
+        fields["instagram"] = check_instagram(given["instagram"])
     if "is_featured" in given:
         fields["is_featured"] = bool(given["is_featured"])
     if "price" in given or "is_free" in given:

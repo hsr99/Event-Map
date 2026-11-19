@@ -97,6 +97,8 @@ const toDraft = (ev) => ({
   is_free: Boolean(ev.is_free),
   price: ev.is_free ? '' : String(ev.price ?? ''),
   booking_link: ev.booking_link || '',
+  contact_phone: ev.contact_phone || '',
+  instagram: ev.instagram || '',
   description: ev.description || '',
   is_featured: Boolean(ev.is_featured),
   lat: ev.lat ?? '',
@@ -106,7 +108,7 @@ const toDraft = (ev) => ({
 // Only send what changed, in the shape the API expects.
 const changesFrom = (original, draft) => {
   const out = {};
-  for (const key of ['title', 'category', 'venue', 'area', 'date', 'end_date', 'booking_link', 'description']) {
+  for (const key of ['title', 'category', 'venue', 'area', 'date', 'end_date', 'booking_link', 'contact_phone', 'instagram', 'description']) {
     if (draft[key] !== original[key]) out[key] = draft[key];
   }
   if (draft.is_featured !== original.is_featured) out.is_featured = draft.is_featured;
@@ -468,6 +470,19 @@ function EventEditor({ event, token, theme, open, onToggle, onChanged, onRemoved
               <label className={labelClass} htmlFor={`link-${event.id}`}>Booking link</label>
               <input id={`link-${event.id}`} type="url" value={draft.booking_link} onChange={set('booking_link')} className={inputClass} placeholder="https://" />
             </div>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div>
+                <label className={labelClass} htmlFor={`phone-${event.id}`}>Organiser phone</label>
+                <input id={`phone-${event.id}`} type="tel" value={draft.contact_phone} onChange={set('contact_phone')} className={inputClass} placeholder="98765 43210" />
+              </div>
+              <div>
+                <label className={labelClass} htmlFor={`ig-${event.id}`}>Organiser Instagram</label>
+                <input id={`ig-${event.id}`} value={draft.instagram} onChange={set('instagram')} className={inputClass} placeholder="@handle" />
+              </div>
+            </div>
+            <p className="-mt-3 text-xs italic text-muted">
+              Shown publicly as the event's button: booking link first, then Instagram, then phone. None of them = no button.
+            </p>
             <div>
               <label className={labelClass} htmlFor={`desc-${event.id}`}>Description</label>
               <textarea

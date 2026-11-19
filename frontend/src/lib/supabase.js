@@ -12,7 +12,7 @@ export const isSupabaseConfigured = !isPlaceholder(supabaseUrl) && !isPlaceholde
 export const supabase = isSupabaseConfigured ? createClient(supabaseUrl, supabaseAnonKey) : null;
 
 const EVENT_COLUMNS =
-  'id,title,category,area,venue,date,end_date,price,is_free,description,image_url,booking_link,lat,lng,is_featured';
+  'id,title,category,area,venue,date,end_date,price,is_free,description,image_url,booking_link,contact_phone,instagram,lat,lng,is_featured';
 
 /**
  * Published events, soonest first, in the shape the UI uses (`isFree`).

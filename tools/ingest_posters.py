@@ -25,6 +25,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
 from backend import dedupe, store  # noqa: E402
+from backend.contacts import normalize_instagram, normalize_link, normalize_phone  # noqa: E402
 from backend.extractor import extract_poster_details  # noqa: E402
 from backend.geocoder import resolve_venue_coordinates  # noqa: E402
 from backend.posters import InvalidPoster, inspect_poster  # noqa: E402
@@ -48,7 +49,9 @@ def build_event(details: dict, publish_all: bool) -> tuple[dict, list]:
         "price": details["price"],
         "is_free": details["isFree"],
         "description": details["description"],
-        "booking_link": details["booking_link"],
+        "booking_link": normalize_link(details["booking_link"]),
+        "contact_phone": normalize_phone(details.get("contact_phone")),
+        "instagram": normalize_instagram(details.get("instagram")),
         "lat": geo["lat"],
         "lng": geo["lng"],
         "status": "published" if publish_all or not review else "review",

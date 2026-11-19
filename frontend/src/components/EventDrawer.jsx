@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowUpRight, X } from 'lucide-react';
+import { ArrowUpRight, Phone, X } from 'lucide-react';
 import EventImage from './EventImage';
 import { formatLongDate, formatPrice, formatTimeRange } from '../lib/format';
 
@@ -14,6 +14,24 @@ const CATEGORY_NAMES = {
   movies: 'Movies & Screenings',
 };
 
+const INSTAGRAM_HANDLE = /^[A-Za-z0-9._]{1,30}$/;
+const PHONE = /^\+\d{8,15}$/;
+
+// The one way to book or ask about this event, best first: booking link, then the
+// organiser's Instagram, then their phone. None of them = no button.
+const contactAction = (event) => {
+  const link = safeLink(event.booking_link);
+  if (link) return { href: link, label: event.isFree ? 'Register' : 'Book Tickets', external: true };
+  const handle = (event.instagram || '').replace(/^@/, '');
+  if (INSTAGRAM_HANDLE.test(handle)) {
+    return { href: `https://www.instagram.com/${handle}/`, label: 'Instagram', external: true, note: `@${handle}` };
+  }
+  if (PHONE.test(event.contact_phone || '')) {
+    return { href: `tel:${event.contact_phone}`, label: 'Call', phone: true, note: event.contact_phone };
+  }
+  return null;
+};
+
 // Only http(s) links; anything else from a submission is ignored.
 const safeLink = (url) => {
   try {
@@ -25,7 +43,7 @@ const safeLink = (url) => {
 };
 
 export default function EventDrawer({ event, onClose }) {
-  const bookingLink = safeLink(event.booking_link);
+  const action = contactAction(event);
   const priceTone = event.isFree ? 'text-teal-700 dark:text-teal-400' : 'text-yellow-700 dark:text-yellow-500';
 
   useEffect(() => {
@@ -120,23 +138,25 @@ export default function EventDrawer({ event, onClose }) {
             <p className="text-xs italic text-muted">{event.isFree ? 'Admission' : 'Per guest'}</p>
             <p className={`mt-1 font-display text-4xl leading-none ${priceTone}`}>{formatPrice(event)}</p>
           </div>
-          {bookingLink ? (
-            <a
-              href={bookingLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="cursor-pointer group inline-flex shrink-0 items-center gap-3 bg-ink px-5 pb-3 pt-3.5 font-display text-lg sm:gap-4 sm:px-7 sm:pb-3.5 sm:pt-4 sm:text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 dark:bg-bone dark:text-ink dark:hover:bg-teal-400"
-            >
-              {event.isFree ? 'Register' : 'Book Tickets'}
-              <ArrowUpRight
-                className="-mt-1 size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
-                strokeWidth={1.5}
-              />
-            </a>
-          ) : (
-            <p className="max-w-[12rem] text-right text-sm italic text-muted">
-              {event.isFree ? 'Just turn up, or check the poster for sign-up details.' : 'Check the poster for where to get tickets.'}
-            </p>
+          {action && (
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              <a
+                href={action.href}
+                {...(action.external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                className="cursor-pointer group inline-flex items-center gap-3 bg-ink px-5 pb-3 pt-3.5 font-display text-lg sm:gap-4 sm:px-7 sm:pb-3.5 sm:pt-4 sm:text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 dark:bg-bone dark:text-ink dark:hover:bg-teal-400"
+              >
+                {action.label}
+                {action.phone ? (
+                  <Phone className="-mt-1 size-4" strokeWidth={1.5} />
+                ) : (
+                  <ArrowUpRight
+                    className="-mt-1 size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                    strokeWidth={1.5}
+                  />
+                )}
+              </a>
+              {action.note && <span className="text-xs text-muted">{action.note}</span>}
+            </div>
           )}
         </div>
       </motion.aside>

@@ -30,11 +30,12 @@ STATUSES = ("review", "published", "hidden", "expired")
 # Columns visitors may see. Private intake data lives in `submissions`.
 EVENT_COLUMNS = (
     "id,title,category,area,venue,date,end_date,price,is_free,description,"
-    "image_url,booking_link,lat,lng,is_featured,status,created_at"
+    "image_url,booking_link,contact_phone,instagram,lat,lng,is_featured,status,created_at"
 )
 WRITABLE_EVENT_FIELDS = (
     "title", "category", "area", "venue", "date", "end_date", "price", "is_free",
-    "description", "image_url", "booking_link", "lat", "lng", "is_featured", "status",
+    "description", "image_url", "booking_link", "contact_phone", "instagram",
+    "lat", "lng", "is_featured", "status",
 )
 
 # An event can sit in review with any of these blank, but can't be published without them.

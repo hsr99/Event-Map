@@ -62,6 +62,8 @@ information and return ONLY a valid JSON object with these exact keys:
   "area":          string | null,   // Chennai locality e.g. "Velachery", "T Nagar"
   "ticket_price":  string | null,   // e.g. "Free", "Rs.299", "Rs.199-Rs.499"
   "booking_link":  string | null,   // registration / booking URL if present
+  "contact_phone": string | null,   // organiser phone / WhatsApp number printed for bookings or enquiries
+  "instagram":     string | null,   // organiser's Instagram handle, e.g. "@chennaigigs"
   "category":      string | null,   // one of: tech, music, comedy, art_workshop,
                                     //   sports_fitness, food_drink, networking_business,
                                     //   film_theatre, community_social, college_cultural
@@ -127,6 +129,7 @@ def image_to_data_url(img: Image.Image) -> str:
 REQUIRED_FIELDS = [
     "event_name", "date", "date_end", "time", "time_end",
     "venue", "area", "ticket_price", "booking_link", "category", "description",
+    "contact_phone", "instagram",
 ]
 CONFIDENCE_FIELDS = [
     "event_name", "date", "time", "venue", "area",

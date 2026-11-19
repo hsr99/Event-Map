@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS public.events (
     description  TEXT,
     image_url    TEXT,
     booking_link TEXT,
+    contact_phone TEXT,                 -- organiser's public number from the poster
+    instagram    TEXT,                  -- organiser's Instagram handle, without @
     lat          DOUBLE PRECISION,
     lng          DOUBLE PRECISION,
     is_featured  BOOLEAN NOT NULL DEFAULT FALSE,
@@ -63,6 +65,9 @@ CREATE TABLE IF NOT EXISTS public.events (
 -- Older versions defaulted new events straight to 'published'
 ALTER TABLE public.events ALTER COLUMN status SET DEFAULT 'review';
 ALTER TABLE public.events DROP COLUMN IF EXISTS source;
+-- Organiser contact shown on the event (public: it's printed on the poster)
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS contact_phone TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS instagram TEXT;
 
 -- Poster-only submissions: details can be missing until review, never once published.
 ALTER TABLE public.events ALTER COLUMN title    DROP NOT NULL;
