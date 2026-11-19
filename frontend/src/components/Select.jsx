@@ -47,7 +47,7 @@ export default function Select({ label, value, options, onChange }) {
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -6 }}
             transition={{ duration: 0.18 }}
-            className="absolute right-0 z-30 mt-2 max-h-72 w-full min-w-56 overflow-y-auto border border-line bg-ivory py-2 shadow-[0_24px_48px_-24px_rgba(0,0,0,0.35)] dark:bg-[#181818]"
+            className="absolute left-0 z-30 mt-2 max-h-72 w-full overflow-y-auto sm:left-auto sm:right-0 sm:min-w-56 border border-line bg-ivory py-2 shadow-[0_24px_48px_-24px_rgba(0,0,0,0.35)] dark:bg-[#181818]"
           >
             {options.map((option) => {
               const isSelected = option.value === value;

@@ -80,15 +80,15 @@ export default function EventDrawer({ event, onClose }) {
             </p>
             <h2
               id="event-drawer-title"
-              className="mt-4 font-display text-5xl leading-[0.9] tracking-[0.02em] sm:text-6xl"
+              className="mt-4 font-display text-4xl leading-[0.9] tracking-[0.02em] sm:text-6xl"
             >
               {event.title}
             </h2>
             <p className="mt-6 text-lg leading-relaxed text-ink/75 dark:text-bone/75">{event.description}</p>
 
-            <dl className="mt-10 border-t border-line">
+            <dl className="mt-8 border-t border-line sm:mt-10">
               {details.map(([term, value]) => (
-                <div key={term} className="grid grid-cols-[8.5rem_1fr] gap-4 border-b border-line py-4 text-sm">
+                <div key={term} className="grid grid-cols-[6.5rem_1fr] gap-4 sm:grid-cols-[8.5rem_1fr] border-b border-line py-4 text-sm">
                   <dt className="italic text-muted">{term}</dt>
                   <dd>{value}</dd>
                 </div>
@@ -97,7 +97,7 @@ export default function EventDrawer({ event, onClose }) {
           </motion.div>
         </div>
 
-        <div className="flex items-center justify-between gap-6 border-t border-line px-6 py-5 sm:px-10">
+        <div className="flex items-center justify-between gap-4 border-t border-line px-6 pt-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:gap-6 sm:px-10">
           <div>
             <p className="text-xs italic text-muted">{event.isFree ? 'Admission' : 'Per guest'}</p>
             <p className={`mt-1 font-display text-4xl leading-none ${priceTone}`}>{formatPrice(event)}</p>
@@ -106,7 +106,7 @@ export default function EventDrawer({ event, onClose }) {
             type="button"
             disabled={reserved}
             onClick={() => setReserved(true)}
-            className="cursor-pointer group inline-flex items-center gap-4 bg-ink px-7 pb-3.5 pt-4 font-display text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 disabled:cursor-default disabled:bg-teal-700 dark:bg-bone dark:text-ink dark:hover:bg-teal-400 dark:disabled:bg-teal-400"
+            className="cursor-pointer group inline-flex shrink-0 items-center gap-3 bg-ink px-5 pb-3 pt-3.5 font-display text-lg sm:gap-4 sm:px-7 sm:pb-3.5 sm:pt-4 sm:text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 disabled:cursor-default disabled:bg-teal-700 dark:bg-bone dark:text-ink dark:hover:bg-teal-400 dark:disabled:bg-teal-400"
           >
             {reserved ? (
               <>

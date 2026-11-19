@@ -89,6 +89,26 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
   const [filterByMapBounds, setFilterByMapBounds] = useState(false);
 
   const carouselRef = useRef(null);
+  const mapViewRef = useRef(null);
+
+  // Split view (list beside map) needs a wide screen. Drop back to the list
+  // if the window shrinks below the lg breakpoint while it's open.
+  useEffect(() => {
+    const wide = window.matchMedia('(min-width: 1024px)');
+    const onChange = () => {
+      if (!wide.matches) setViewMode((mode) => (mode === 'split' ? 'grid' : mode));
+    };
+    onChange();
+    wide.addEventListener('change', onChange);
+    return () => wide.removeEventListener('change', onChange);
+  }, []);
+
+  // On phones the map sits below the filters; bring it into view when chosen.
+  useEffect(() => {
+    if (viewMode !== 'map' || !window.matchMedia('(max-width: 639px)').matches) return;
+    const id = requestAnimationFrame(() => mapViewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    return () => cancelAnimationFrame(id);
+  }, [viewMode]);
 
   const pageTitle = CATEGORY_TITLES[activeCategory] || 'All Experiences';
 
@@ -206,9 +226,9 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
       exit={{ opacity: 0, y: 16, transition: { duration: 0.3, ease: 'easeIn' } }}
       className="min-h-svh"
     >
-      <main className="mx-auto w-full px-6 pb-24 lg:px-12 xl:px-16 2xl:px-24">
+      <main className="mx-auto w-full px-4 pb-12 sm:px-6 sm:pb-24 lg:px-12 xl:px-16 2xl:px-24">
         {/* Header Section */}
-        <section className="pb-8 pt-10 sm:pt-14">
+        <section className="pb-5 pt-5 sm:pb-8 sm:pt-14">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <button
               type="button"
@@ -228,19 +248,19 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
               <button
                 type="button"
                 onClick={() => setViewMode('grid')}
-                className={`flex cursor-pointer items-center gap-2 px-3.5 py-1.5 text-xs font-serif uppercase tracking-wider transition-colors ${
+                className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs sm:px-3.5 font-serif uppercase tracking-wider transition-colors ${
                   viewMode === 'grid'
                     ? 'bg-ink text-ivory dark:bg-bone dark:text-ink font-semibold'
                     : 'text-muted hover:text-ink dark:hover:text-bone'
                 }`}
               >
                 <LayoutGrid className="size-3.5" />
-                <span className="hidden sm:inline">Grid</span>
+                <span>List</span>
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode('split')}
-                className={`flex cursor-pointer items-center gap-2 px-3.5 py-1.5 text-xs font-serif uppercase tracking-wider transition-colors ${
+                className={`hidden lg:flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs sm:px-3.5 font-serif uppercase tracking-wider transition-colors ${
                   viewMode === 'split'
                     ? 'bg-ink text-ivory dark:bg-bone dark:text-ink font-semibold'
                     : 'text-muted hover:text-ink dark:hover:text-bone'
@@ -252,7 +272,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
               <button
                 type="button"
                 onClick={() => setViewMode('map')}
-                className={`flex cursor-pointer items-center gap-2 px-3.5 py-1.5 text-xs font-serif uppercase tracking-wider transition-colors ${
+                className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs sm:px-3.5 font-serif uppercase tracking-wider transition-colors ${
                   viewMode === 'map'
                     ? 'bg-ink text-ivory dark:bg-bone dark:text-ink font-semibold'
                     : 'text-muted hover:text-ink dark:hover:text-bone'
@@ -264,7 +284,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
             </div>
           </div>
 
-          <div className="mt-8 flex flex-wrap items-baseline justify-between gap-4">
+          <div className="mt-5 flex flex-wrap items-baseline justify-between gap-3 sm:mt-8 sm:gap-4">
             <div>
               <p className="flex items-center gap-3 text-[11px] uppercase tracking-[0.3em] text-muted">
                 <span className="h-px w-8 bg-yellow-600 dark:bg-yellow-500" />
@@ -274,14 +294,14 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                 key={pageTitle}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-4 font-display text-6xl leading-[0.85] uppercase tracking-[0.02em] sm:text-8xl"
+                className="mt-3 font-display text-5xl leading-[0.85] uppercase tracking-[0.02em] sm:mt-4 sm:text-8xl"
               >
                 {pageTitle}
               </motion.h1>
             </div>
 
             {/* Live Stats Badge */}
-            <div className="flex items-center gap-3 border border-line px-4 py-2 text-xs italic text-muted">
+            <div className="flex items-center gap-3 border border-line px-3 py-2 text-xs italic text-muted sm:px-4">
               <Sparkles className="size-3.5 text-teal-600 dark:text-teal-400" />
               <span>
                 <strong className="not-italic text-ink dark:text-bone">{stats.total}</strong> active listings across{' '}
@@ -297,11 +317,12 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
         </section>
 
         {/* Filter Controls Bar */}
-        <section aria-label="Filters" className="border-y border-line py-5 transition-colors duration-200">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:gap-8">
+        <section aria-label="Filters" className="border-y border-line py-4 sm:py-5 transition-colors duration-200">
+          <div className="flex flex-col gap-4 sm:gap-6 lg:flex-row lg:items-end lg:gap-8">
+            <div className="flex items-end gap-3 lg:contents">
             <button
               onClick={() => setIsCategoryOverlayOpen(true)}
-              className="group flex h-10 shrink-0 cursor-pointer items-center justify-center gap-3 border border-line bg-transparent px-5 font-serif text-base italic text-ink transition-colors hover:border-teal-700 hover:text-teal-800 dark:text-bone dark:hover:border-teal-400 dark:hover:text-teal-300"
+              className="group flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 border border-line bg-transparent px-3 font-serif sm:gap-3 sm:px-5 text-base italic text-ink transition-colors hover:border-teal-700 hover:text-teal-800 dark:text-bone dark:hover:border-teal-400 dark:hover:text-teal-300"
             >
               <Grid2X2 className="h-4 w-4 opacity-70 group-hover:opacity-100" strokeWidth={1.5} />
               Categories
@@ -311,14 +332,14 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
             </button>
 
             {/* Search Input */}
-            <label className="flex flex-1 items-center gap-3 border-b border-line pb-2 transition-colors duration-300 focus-within:border-teal-700 dark:focus-within:border-teal-400">
+            <label className="flex min-w-0 flex-1 items-center gap-3 border-b border-line pb-2 transition-colors duration-300 focus-within:border-teal-700 dark:focus-within:border-teal-400">
               <span className="sr-only">Search events</span>
               <Search className="size-4 shrink-0 text-muted" strokeWidth={1.25} />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search event, venue, artist, area..."
+                placeholder="Search events & venues"
                 className="w-full bg-transparent py-1 outline-none placeholder:italic placeholder:text-muted"
               />
               {query && (
@@ -332,9 +353,10 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                 </button>
               )}
             </label>
+            </div>
 
             {/* Time Filter Chips */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 no-scrollbar sm:mx-0 sm:px-0">
               {TIME_FILTERS.map((tf) => {
                 const isActive = timeFilter === tf.id;
                 return (
@@ -355,8 +377,8 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
             </div>
 
             {/* Select Dropdowns */}
-            <div className="flex flex-wrap items-end gap-x-8 gap-y-4">
-              <div className="w-36">
+            <div className="grid grid-cols-2 gap-x-5 gap-y-4 sm:flex sm:flex-wrap sm:items-end sm:gap-x-8">
+              <div className="min-w-0 sm:w-36">
                 <Select
                   label="Budget"
                   value={budget}
@@ -365,7 +387,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                 />
               </div>
 
-              <div className="w-52">
+              <div className="min-w-0 sm:w-52">
                 <Select label="Area" value={area} options={AREA_OPTIONS} onChange={setArea} />
               </div>
             </div>
@@ -373,7 +395,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
         </section>
 
         {/* Status Bar */}
-        <div className="flex items-baseline justify-between py-5 text-sm">
+        <div className="flex items-baseline justify-between gap-4 py-4 text-sm sm:py-5">
           <div className="flex items-center gap-4">
             <p className="italic text-muted">
               Showing <span className="not-italic tabular-nums text-ink dark:text-bone font-semibold">{visibleEvents.length}</span> of{' '}
@@ -396,9 +418,10 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
             <button
               type="button"
               onClick={resetFilters}
-              className="cursor-pointer underline decoration-line underline-offset-4 transition-colors hover:text-teal-700 hover:decoration-current dark:hover:text-teal-400 text-xs uppercase tracking-wider"
+              className="shrink-0 cursor-pointer underline decoration-line underline-offset-4 transition-colors hover:text-teal-700 hover:decoration-current dark:hover:text-teal-400 text-xs uppercase tracking-wider"
             >
-              Clear all filters
+              <span className="sm:hidden">Clear</span>
+              <span className="hidden sm:inline">Clear all filters</span>
             </button>
           )}
         </div>
@@ -507,7 +530,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
 
         {/* VIEW 3: Full Map View with Bottom Floating Carousel */}
         {viewMode === 'map' && (
-          <div className="relative h-[82vh] w-full overflow-hidden border border-line shadow-2xl">
+          <div ref={mapViewRef} className="relative -mx-4 h-[calc(100svh-8.5rem-env(safe-area-inset-bottom))] scroll-mt-[3.75rem] overflow-hidden border-y border-line shadow-2xl sm:mx-0 sm:h-[82vh] sm:scroll-mt-0 sm:border">
             {/* The Full MapLibre Container */}
             <ChennaiMap
               events={visibleEvents}
@@ -519,14 +542,14 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
             />
 
             {/* Bottom Floating Carousel Drawer */}
-            <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 px-4 sm:px-8">
-              <div className="pointer-events-auto mx-auto max-w-5xl rounded-sm border border-line bg-ivory/95 p-3 shadow-2xl backdrop-blur-xl dark:bg-ink/95">
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 px-3 sm:bottom-4 sm:px-8">
+              <div className="pointer-events-auto mx-auto max-w-5xl rounded-sm border border-line bg-ivory/95 p-2.5 shadow-2xl sm:p-3 backdrop-blur-xl dark:bg-ink/95">
                 <div className="flex items-center justify-between pb-2 px-1 text-xs uppercase tracking-widest text-muted border-b border-line mb-3">
                   <div className="flex items-center gap-2">
                     <span className="size-2 rounded-full bg-teal-500" />
                     <span>Chennai Radar Events ({visibleEvents.length})</span>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="hidden items-center gap-1 sm:flex">
                     <button
                       type="button"
                       onClick={() => scrollCarousel('left')}
@@ -549,7 +572,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                 {/* Horizontal Scroll Cards */}
                 <div
                   ref={carouselRef}
-                  className="flex gap-4 overflow-x-auto pb-1 no-scrollbar scroll-smooth"
+                  className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 no-scrollbar scroll-smooth sm:gap-4"
                 >
                   {visibleEvents.map((event) => {
                     const isFocused = focusedEventId === event.id;
@@ -557,7 +580,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                       <div
                         key={event.id}
                         onClick={() => setFocusedEventId(event.id)}
-                        className={`cursor-pointer group flex min-w-[280px] max-w-[320px] shrink-0 gap-3 border p-3 transition-all ${
+                        className={`cursor-pointer group flex w-[78vw] max-w-[320px] shrink-0 snap-start gap-3 border p-3 transition-all sm:w-auto sm:min-w-[280px] ${
                           isFocused
                             ? 'border-teal-600 bg-teal-500/10 dark:border-teal-400 dark:bg-teal-400/10 shadow-sm'
                             : 'border-line hover:border-ink/40 dark:hover:border-bone/40 bg-ink/[0.02] dark:bg-bone/[0.02]'

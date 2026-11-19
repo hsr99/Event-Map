@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, MotionConfig } from 'framer-motion';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import GlobalHeader from './components/GlobalHeader';
+import MobileTabBar from './components/MobileTabBar';
 import LandingView from './views/LandingView';
 import UnifiedEventsDirectory from './components/UnifiedEventsDirectory';
 import SubmitPosterView from './views/SubmitPosterView';
@@ -53,9 +54,11 @@ export default function App() {
       <MotionConfig reducedMotion="user">
         <div className="flex min-h-svh flex-col overflow-x-clip bg-ivory text-ink transition-colors duration-200 dark:bg-ink dark:text-bone">
           <GlobalHeader theme={theme} onToggleTheme={toggleTheme} />
-          <div className="flex-1">
+          {/* Bottom padding on phones keeps content clear of the fixed tab bar */}
+          <div className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
             <AnimatedRoutes theme={theme} toggleTheme={toggleTheme} />
           </div>
+          <MobileTabBar />
         </div>
       </MotionConfig>
     </BrowserRouter>

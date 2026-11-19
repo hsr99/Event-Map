@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { User, Menu } from 'lucide-react';
+import { User } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 
 export default function GlobalHeader({ theme, onToggleTheme }) {
@@ -8,13 +8,13 @@ export default function GlobalHeader({ theme, onToggleTheme }) {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-ivory/90 backdrop-blur-md transition-colors duration-200 dark:bg-ink/90">
-      <nav className="mx-auto flex w-full items-center justify-between px-6 py-6 lg:px-12 xl:px-16 2xl:px-24">
+      <nav className="mx-auto flex w-full items-center justify-between px-4 py-3 sm:px-6 sm:py-6 lg:px-12 xl:px-16 2xl:px-24">
         {isLanding ? (
-          <span className="pt-1 font-display text-4xl leading-none tracking-[0.14em]">JARVIS</span>
+          <span className="pt-1 font-display text-3xl sm:text-4xl leading-none tracking-[0.14em]">JARVIS</span>
         ) : (
           <Link
             to="/"
-            className="pt-1 font-display text-4xl leading-none tracking-[0.14em] cursor-pointer hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
+            className="pt-1 font-display text-3xl sm:text-4xl leading-none tracking-[0.14em] cursor-pointer hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
           >
             JARVIS
           </Link>
@@ -44,7 +44,7 @@ export default function GlobalHeader({ theme, onToggleTheme }) {
             </Link>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3 sm:gap-4">
             <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             
             <button

@@ -28,6 +28,13 @@
   --color-muted: var(--muted);
 }
 
+/* Phones pinch to zoom; the +/- buttons would sit under the map's card strip. */
+@media (max-width: 639px) {
+  .maplibregl-ctrl-bottom-right {
+    display: none;
+  }
+}
+
 @utility no-scrollbar {
   scrollbar-width: none;
   &::-webkit-scrollbar {

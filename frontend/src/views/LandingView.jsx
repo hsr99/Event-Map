@@ -53,14 +53,14 @@ export default function LandingView({ theme, onToggleTheme }) {
         <motion.section
           variants={reveal}
           aria-label="Live map of Chennai events"
-          className="relative h-[68svh] overflow-hidden border-b border-line bg-ink/[0.025] lg:h-auto lg:min-h-svh lg:border-b-0 lg:border-r dark:bg-bone/[0.015]"
+          className="relative h-[46svh] overflow-hidden sm:h-[60svh] border-b border-line bg-ink/[0.025] lg:h-auto lg:min-h-svh lg:border-b-0 lg:border-r dark:bg-bone/[0.015]"
         >
           {/* Mode Switcher on Hero Map */}
-          <div className="absolute right-6 top-6 z-20 flex items-center gap-1 border border-line bg-ivory/90 p-1 text-xs backdrop-blur-md dark:bg-ink/90">
+          <div className="absolute right-3 top-3 z-20 flex sm:right-6 sm:top-6 items-center gap-1 border border-line bg-ivory/90 p-1 text-xs backdrop-blur-md dark:bg-ink/90">
             <button
               type="button"
               onClick={() => setMapMode('vector')}
-              className={`flex cursor-pointer items-center gap-1.5 px-3 py-1 font-serif uppercase tracking-wider transition-colors ${
+              className={`flex cursor-pointer items-center gap-1.5 px-2.5 py-1 font-serif sm:px-3 uppercase tracking-wider transition-colors ${
                 mapMode === 'vector'
                   ? 'bg-ink text-ivory dark:bg-bone dark:text-ink'
                   : 'text-muted hover:text-ink dark:hover:text-bone'
@@ -72,7 +72,7 @@ export default function LandingView({ theme, onToggleTheme }) {
             <button
               type="button"
               onClick={() => setMapMode('live')}
-              className={`flex cursor-pointer items-center gap-1.5 px-3 py-1 font-serif uppercase tracking-wider transition-colors ${
+              className={`flex cursor-pointer items-center gap-1.5 px-2.5 py-1 font-serif sm:px-3 uppercase tracking-wider transition-colors ${
                 mapMode === 'live'
                   ? 'bg-ink text-ivory dark:bg-bone dark:text-ink'
                   : 'text-muted hover:text-ink dark:hover:text-bone'
@@ -114,7 +114,7 @@ export default function LandingView({ theme, onToggleTheme }) {
           )}
         </motion.section>
 
-        <section className="flex flex-col justify-center px-8 py-16 sm:px-12 lg:px-14 xl:px-20">
+        <section className="flex flex-col justify-center px-6 py-10 sm:px-12 sm:py-16 lg:px-14 xl:px-20">
           <motion.p variants={item} className="flex items-center gap-4 text-[11px] uppercase tracking-[0.3em] text-muted">
             <span className="h-px w-10 bg-yellow-600 dark:bg-yellow-500" />
             Chennai · Est. 2026
@@ -122,7 +122,7 @@ export default function LandingView({ theme, onToggleTheme }) {
 
           <motion.h1
             variants={item}
-            className="mt-8 font-display text-[clamp(6rem,11vw,11rem)] leading-[0.82] tracking-[0.02em]"
+            className="mt-5 font-display text-[clamp(4.5rem,11vw,11rem)] sm:mt-8 leading-[0.82] tracking-[0.02em]"
           >
             JARVIS
           </motion.h1>
@@ -141,7 +141,7 @@ export default function LandingView({ theme, onToggleTheme }) {
             type="button"
             onClick={() => navigate('/events')}
             aria-label="Explore the listings"
-            className="group mt-14 inline-flex cursor-pointer items-center gap-4 self-start bg-ink px-7 pb-3.5 pt-4 font-display text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 dark:bg-bone dark:text-ink dark:hover:bg-teal-400"
+            className="group mt-10 inline-flex sm:mt-14 cursor-pointer items-center gap-4 self-start bg-ink px-7 pb-3.5 pt-4 font-display text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 dark:bg-bone dark:text-ink dark:hover:bg-teal-400"
           >
             Explore the listings
             <motion.span
@@ -155,7 +155,7 @@ export default function LandingView({ theme, onToggleTheme }) {
             </motion.span>
           </motion.button>
 
-          <motion.dl variants={item} className="mt-20 grid max-w-sm grid-cols-3 gap-6 border-t border-line pt-6">
+          <motion.dl variants={item} className="mt-12 grid max-w-sm sm:mt-20 grid-cols-3 gap-6 border-t border-line pt-6">
             {stats.map(([value, label]) => (
               <div key={label} className="flex flex-col-reverse">
                 <dt className="mt-2 text-xs italic text-muted">{label}</dt>

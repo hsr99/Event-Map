@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
 import { LocateFixed } from 'lucide-react';
 import { formatPrice, formatDate, formatTime } from '../lib/format';
 
@@ -14,11 +15,20 @@ const CATEGORY_COLORS = {
   default: '#2dd4bf',
 };
 
+// MapLibre locates its worker relative to its own bundle, which Vite relocates
+// (dev pre-bundling and production builds). Without the worker, GeoJSON sources
+// never load, so no event pins appear. Point it at the real file explicitly.
+maplibregl.setWorkerUrl(maplibreWorkerUrl);
+
 const CHENNAI_CENTER = [80.24, 13.04]; // [lng, lat]
 const CHENNAI_BOUNDS = [
   [80.05, 12.80], // Southwest coords
   [80.35, 13.25], // Northeast coords
 ];
+
+// Phones show a narrow slice of the city, so start one step further out.
+const defaultZoom = () =>
+  typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches ? 10.6 : 11.5;
 
 export default function ChennaiMap({
   events = [],
@@ -87,7 +97,7 @@ export default function ChennaiMap({
       container: mapContainer.current,
       style: getMapStyle(isDark),
       center: CHENNAI_CENTER,
-      zoom: 11.5,
+      zoom: defaultZoom(),
       minZoom: 9.5,
       maxZoom: 18,
       maxBounds: CHENNAI_BOUNDS,
@@ -436,7 +446,7 @@ export default function ChennaiMap({
     if (!mapRef.current) return;
     mapRef.current.flyTo({
       center: CHENNAI_CENTER,
-      zoom: 11.5,
+      zoom: defaultZoom(),
       speed: 1.4,
     });
   };
@@ -448,7 +458,8 @@ export default function ChennaiMap({
       {/* City Indicator Badge */}
       <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-line bg-ivory/85 px-3 py-1 text-[11px] uppercase tracking-wider backdrop-blur-md dark:bg-ink/85 text-muted shadow-sm">
         <span className="size-2 rounded-full bg-teal-500 animate-pulse" />
-        Chennai Radar ({events.length} active)
+        <span className="hidden sm:inline">Chennai Radar ({events.length} active)</span>
+        <span className="sm:hidden">{events.length} live</span>
       </div>
 
       {/* Recenter Button */}
