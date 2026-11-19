@@ -26,6 +26,7 @@ from backend import dedupe, store
 from backend.extractor import extract_poster_details
 from backend.geocoder import resolve_venue_coordinates
 from backend.posters import MAX_POSTER_BYTES, InvalidPoster, inspect_poster
+from backend.ratelimit import client_ip, enforce, limiter
 
 app = FastAPI(
     title="Jarvis Chennai Event Map API",
@@ -47,6 +48,18 @@ app.add_middleware(
 # Rough box around greater Chennai; pins outside it are almost certainly typos.
 LAT_RANGE = (12.4, 13.6)
 LNG_RANGE = (79.6, 80.6)
+
+# Poster reading uses the free vision-model quota: cap it per visitor and overall,
+# so one script can't use it all up. Submissions and reports are capped per visitor.
+READS_PER_VISITOR = (12, 15 * 60)    # 12 reads per 15 minutes
+READS_OVERALL = (200, 60 * 60)       # 200 reads per hour across everyone
+SUBMITS_PER_VISITOR = (10, 60 * 60)
+REPORTS_PER_VISITOR = (20, 60 * 60)
+SLOW_DOWN = "Too many requests from your connection. Please wait a few minutes and try again."
+
+
+def reading_allowed() -> bool:
+    return limiter.allow("reads:all", *READS_OVERALL)
 
 
 @app.exception_handler(store.StoreNotConfigured)
@@ -189,12 +202,15 @@ def get_event(event_id: int):
 
 
 @app.post("/api/extract")
-async def extract_poster(poster: UploadFile = File(...)):
+async def extract_poster(request: Request, poster: UploadFile = File(...)):
     """Read a poster with the vision models and return suggested form values. Stores nothing.
 
     Fields the model couldn't read come back blank and are listed in `needs_review`.
     """
+    enforce(request, "read", *READS_PER_VISITOR, SLOW_DOWN)
     data = await read_poster(poster)
+    if not reading_allowed():
+        raise HTTPException(status_code=503, detail="Poster reading is busy right now. Fill in the details by hand, or try again later.")
     details = await run_in_threadpool(extract_poster_details, data, poster.filename or "")
     found = from_extraction(details)
 
@@ -221,6 +237,7 @@ async def extract_poster(poster: UploadFile = File(...)):
 
 @app.post("/api/submit", status_code=201)
 async def submit_event(
+    request: Request,
     poster: Optional[UploadFile] = File(None),
     title: Optional[str] = Form(""),
     category: Optional[str] = Form(""),
@@ -238,6 +255,7 @@ async def submit_event(
 
     Everything is saved as 'review' and appears on the site once approved.
     """
+    enforce(request, "submit", *SUBMITS_PER_VISITOR, SLOW_DOWN)
     price_text = (price or "").strip()
     price_value: Optional[int] = None
     if price_text:
@@ -282,7 +300,8 @@ async def submit_event(
     extracted_raw = None
     found: Dict[str, Any] = {}
     gaps = [k for k in ("title", "category", "venue", "area", "date") if not event[k]]
-    if poster_info and (gaps or (price_value is None and not free)):
+    # If reading is over its overall cap, save anyway: the gaps get filled in review.
+    if poster_info and (gaps or (price_value is None and not free)) and reading_allowed():
         details = await run_in_threadpool(extract_poster_details, data, poster.filename or "")
         extracted_raw = details.get("raw")
         found = from_extraction(details)
@@ -337,9 +356,10 @@ def list_venues():
 @app.post("/api/reports", status_code=201)
 def report_event(request: Request, event_id: int = Form(...), reason: str = Form(...)):
     """Flag an event as spam or inaccurate."""
+    enforce(request, "report", *REPORTS_PER_VISITOR, SLOW_DOWN)
     if not store.get_event(event_id):
         raise HTTPException(status_code=404, detail="Event not found")
-    ip = request.client.host if request.client else ""
+    ip = client_ip(request)
     salt = os.environ.get("REPORT_IP_SALT", "jarvis")
     ip_hash = hashlib.sha256(f"{salt}:{ip}".encode()).hexdigest() if ip else ""
     report_id = store.insert_report(event_id, clean_text(reason, "Reason", 1000, required=True), ip_hash)
