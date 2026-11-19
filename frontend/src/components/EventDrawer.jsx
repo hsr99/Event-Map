@@ -1,13 +1,31 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowRight, Check, X } from 'lucide-react';
+import { ArrowUpRight, X } from 'lucide-react';
 import EventImage from './EventImage';
 import { formatLongDate, formatPrice, formatTimeRange } from '../lib/format';
 
 const EASE = [0.32, 0.72, 0, 1];
 
+const CATEGORY_NAMES = {
+  concerts: 'Concerts & Gigs',
+  'tech-events': 'Tech Events',
+  'social-gatherings': 'Social Gatherings',
+  'college-culturals': 'College Culturals',
+  movies: 'Movies & Screenings',
+};
+
+// Only http(s) links; anything else from a submission is ignored.
+const safeLink = (url) => {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+  } catch {
+    return null;
+  }
+};
+
 export default function EventDrawer({ event, onClose }) {
-  const [reserved, setReserved] = useState(false);
+  const bookingLink = safeLink(event.booking_link);
   const priceTone = event.isFree ? 'text-teal-700 dark:text-teal-400' : 'text-yellow-700 dark:text-yellow-500';
 
   useEffect(() => {
@@ -26,7 +44,7 @@ export default function EventDrawer({ event, onClose }) {
     ['Neighbourhood', event.area],
     ['Date', formatLongDate(event.date)],
     ['Timings', formatTimeRange(event.date, event.end_date)],
-    ['Admission', event.isFree ? 'Free entry, registration required' : `${formatPrice(event)} per guest`],
+    ['Admission', event.isFree ? 'Free entry' : `${formatPrice(event)} per guest`],
   ];
 
   return (
@@ -74,7 +92,7 @@ export default function EventDrawer({ event, onClose }) {
             className="px-6 pb-10 pt-8 sm:px-10"
           >
             <p className="flex items-center gap-3 text-[11px] uppercase tracking-[0.22em] text-muted">
-              <span className="text-teal-700 dark:text-teal-400">{event.category}</span>
+              <span className="text-teal-700 dark:text-teal-400">{CATEGORY_NAMES[event.category] || event.category}</span>
               <span aria-hidden className="h-px w-5 bg-current opacity-40" />
               <span>{event.area}</span>
             </p>
@@ -102,27 +120,24 @@ export default function EventDrawer({ event, onClose }) {
             <p className="text-xs italic text-muted">{event.isFree ? 'Admission' : 'Per guest'}</p>
             <p className={`mt-1 font-display text-4xl leading-none ${priceTone}`}>{formatPrice(event)}</p>
           </div>
-          <button
-            type="button"
-            disabled={reserved}
-            onClick={() => setReserved(true)}
-            className="cursor-pointer group inline-flex shrink-0 items-center gap-3 bg-ink px-5 pb-3 pt-3.5 font-display text-lg sm:gap-4 sm:px-7 sm:pb-3.5 sm:pt-4 sm:text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 disabled:cursor-default disabled:bg-teal-700 dark:bg-bone dark:text-ink dark:hover:bg-teal-400 dark:disabled:bg-teal-400"
-          >
-            {reserved ? (
-              <>
-                <Check className="-mt-1 size-4" strokeWidth={1.5} />
-                Request received
-              </>
-            ) : (
-              <>
-                {event.isFree ? 'Reserve Seat' : 'Book Tickets'}
-                <ArrowRight
-                  className="-mt-1 size-4 transition-transform duration-300 group-hover:translate-x-1"
-                  strokeWidth={1.5}
-                />
-              </>
-            )}
-          </button>
+          {bookingLink ? (
+            <a
+              href={bookingLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="cursor-pointer group inline-flex shrink-0 items-center gap-3 bg-ink px-5 pb-3 pt-3.5 font-display text-lg sm:gap-4 sm:px-7 sm:pb-3.5 sm:pt-4 sm:text-xl tracking-[0.14em] text-ivory transition-colors duration-300 hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-offset-4 focus-visible:outline-teal-600 dark:bg-bone dark:text-ink dark:hover:bg-teal-400"
+            >
+              {event.isFree ? 'Register' : 'Book Tickets'}
+              <ArrowUpRight
+                className="-mt-1 size-4 transition-transform duration-300 group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                strokeWidth={1.5}
+              />
+            </a>
+          ) : (
+            <p className="max-w-[12rem] text-right text-sm italic text-muted">
+              {event.isFree ? 'Just turn up, or check the poster for sign-up details.' : 'Check the poster for where to get tickets.'}
+            </p>
+          )}
         </div>
       </motion.aside>
     </>

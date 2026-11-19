@@ -8,6 +8,7 @@ import LandingView from './views/LandingView';
 import UnifiedEventsDirectory from './components/UnifiedEventsDirectory';
 import SubmitPosterView from './views/SubmitPosterView';
 import AdminView from './views/AdminView';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const THEME_KEY = 'jarvis-theme';
 
@@ -16,6 +17,7 @@ function AnimatedRoutes({ theme, toggleTheme }) {
   const location = useLocation();
 
   return (
+    <ErrorBoundary resetKey={location.pathname}>
     <AnimatePresence mode="wait" onExitComplete={() => window.scrollTo(0, 0)}>
       <Routes location={location} key={location.pathname}>
         <Route
@@ -34,6 +36,7 @@ function AnimatedRoutes({ theme, toggleTheme }) {
         <Route path="/admin" element={<AdminView theme={theme} />} />
       </Routes>
     </AnimatePresence>
+    </ErrorBoundary>
   );
 }
 

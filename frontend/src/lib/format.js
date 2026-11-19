@@ -19,8 +19,22 @@ const time = new Intl.DateTimeFormat('en-IN', {
   timeZone: TIME_ZONE,
 });
 
-export const formatDate = (iso) => shortDate.format(new Date(iso));
-export const formatLongDate = (iso) => longDate.format(new Date(iso));
-export const formatTime = (iso) => time.format(new Date(iso));
-export const formatTimeRange = (start, end) => `${formatTime(start)} - ${formatTime(end)}`;
+// Intl throws on an invalid date, which would take the whole page down; show nothing instead.
+const safe = (formatter) => (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : formatter.format(d);
+};
+
+export const formatDate = safe(shortDate);
+export const formatLongDate = safe(longDate);
+export const formatTime = safe(time);
+export const formatTimeRange = (start, end) => {
+  const from = formatTime(start);
+  const to = formatTime(end);
+  if (!to) return from;
+  // Multi-day events: show the end date too.
+  const endDay = formatDate(end);
+  return endDay && endDay !== formatDate(start) ? `${from} - ${endDay}, ${to}` : `${from} - ${to}`;
+};
 export const formatPrice = (event) => (event.isFree ? 'Free' : `₹${event.price.toLocaleString('en-IN')}`);
