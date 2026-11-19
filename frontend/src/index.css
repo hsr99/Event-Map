@@ -54,3 +54,28 @@
     @apply bg-teal-700 text-ivory dark:bg-teal-400 dark:text-ink;
   }
 }
+
+/* MapLibre popup custom styling */
+.jarvis-map-popup .maplibregl-popup-content {
+  background: rgba(255, 255, 240, 0.95);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  padding: 8px 12px;
+  border-radius: 2px;
+}
+
+.dark .jarvis-map-popup .maplibregl-popup-content {
+  background: rgba(18, 18, 18, 0.95);
+  border: 1px solid var(--line);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+}
+
+.jarvis-map-popup .maplibregl-popup-tip {
+  border-top-color: rgba(255, 255, 240, 0.95);
+}
+
+.dark .jarvis-map-popup .maplibregl-popup-tip {
+  border-top-color: rgba(18, 18, 18, 0.95);
+}
+

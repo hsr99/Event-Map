@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import GlobalHeader from './components/GlobalHeader';
 import LandingView from './views/LandingView';
 import UnifiedEventsDirectory from './components/UnifiedEventsDirectory';
+import SubmitPosterView from './views/SubmitPosterView';
 
 const THEME_KEY = 'jarvis-theme';
 
@@ -21,6 +22,10 @@ function AnimatedRoutes({ theme, toggleTheme }) {
         <Route
           path="/events"
           element={<UnifiedEventsDirectory theme={theme} onToggleTheme={toggleTheme} />}
+        />
+        <Route
+          path="/submit"
+          element={<SubmitPosterView theme={theme} onToggleTheme={toggleTheme} />}
         />
       </Routes>
     </AnimatePresence>

@@ -1,6 +1,10 @@
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
+import { Map as MapIcon, Compass } from 'lucide-react';
 import chennaiMap from '../assets/chennai-map.svg';
+import ChennaiMap from '../components/ChennaiMap';
+import EventDrawer from '../components/EventDrawer';
 import { events } from '../data/events';
 
 const stats = [
@@ -34,6 +38,9 @@ const mapMask = {
 
 export default function LandingView({ theme, onToggleTheme }) {
   const navigate = useNavigate();
+  const [mapMode, setMapMode] = useState('vector'); // 'vector' | 'live'
+  const [selectedEvent, setSelectedEvent] = useState(null);
+
   return (
     <>
       <motion.main
@@ -43,41 +50,68 @@ export default function LandingView({ theme, onToggleTheme }) {
         exit="exit"
         className="relative grid min-h-svh grid-cols-1 lg:grid-cols-[3fr_2fr]"
       >
-
         <motion.section
           variants={reveal}
           aria-label="Live map of Chennai events"
           className="relative h-[68svh] overflow-hidden border-b border-line bg-ink/[0.025] lg:h-auto lg:min-h-svh lg:border-b-0 lg:border-r dark:bg-bone/[0.015]"
         >
-          {/* Static SVG Map Container (no hover animations) */}
-          <div
-            className="absolute left-1/2 top-1/2 aspect-[600/1155] h-[140%] -translate-x-1/2 -translate-y-[58%] lg:left-auto lg:right-[8%] lg:translate-x-0"
-          >
-            <img
-              src={chennaiMap}
-              alt="Road map of Chennai"
-              draggable={false}
-              className="size-full select-none invert hue-rotate-[200deg] dark:invert-0 dark:hue-rotate-[20deg] dark:drop-shadow-[0_0_6px_rgba(45,212,191,0.25)]"
-            />
-            {/* Scan band */}
-            <div className="pointer-events-none absolute inset-0" style={mapMask}>
-              <motion.div
-                className="absolute inset-x-0 h-1/5 bg-linear-to-b from-transparent via-teal-700/15 to-teal-700/45 dark:via-teal-300/20 dark:to-teal-200/60"
-                animate={{ top: ['-20%', '100%'] }}
-                transition={{ duration: 5, repeat: Infinity, ease: 'linear', repeatDelay: 1 }}
-              />
-            </div>
+          {/* Mode Switcher on Hero Map */}
+          <div className="absolute right-6 top-6 z-20 flex items-center gap-1 border border-line bg-ivory/90 p-1 text-xs backdrop-blur-md dark:bg-ink/90">
+            <button
+              type="button"
+              onClick={() => setMapMode('vector')}
+              className={`flex cursor-pointer items-center gap-1.5 px-3 py-1 font-serif uppercase tracking-wider transition-colors ${
+                mapMode === 'vector'
+                  ? 'bg-ink text-ivory dark:bg-bone dark:text-ink'
+                  : 'text-muted hover:text-ink dark:hover:text-bone'
+              }`}
+            >
+              <Compass className="size-3" />
+              <span>Outline</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMapMode('live')}
+              className={`flex cursor-pointer items-center gap-1.5 px-3 py-1 font-serif uppercase tracking-wider transition-colors ${
+                mapMode === 'live'
+                  ? 'bg-ink text-ivory dark:bg-bone dark:text-ink'
+                  : 'text-muted hover:text-ink dark:hover:text-bone'
+              }`}
+            >
+              <MapIcon className="size-3" />
+              <span>Live Radar</span>
+            </button>
           </div>
 
-          {/* <p className="absolute left-6 top-7 z-20 text-xs italic text-muted"> (???) Chennai</p> */}
-          {/* <div className="absolute bottom-6 left-6 z-20 flex gap-6 text-xs text-muted">
-            <span className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-teal-600 dark:bg-teal-400" /> Free entry
-            </span>
-            <span className="flex items-center gap-2">
-              <span className="size-2 rounded-full bg-yellow-500" /> Ticketed
-            </span>
-          </div> */}
+          {mapMode === 'vector' ? (
+            /* Stylized SVG Map Container */
+            <div className="absolute left-1/2 top-1/2 aspect-[600/1155] h-[140%] -translate-x-1/2 -translate-y-[58%] lg:left-auto lg:right-[8%] lg:translate-x-0">
+              <img
+                src={chennaiMap}
+                alt="Road map of Chennai"
+                draggable={false}
+                className="size-full select-none invert hue-rotate-[200deg] dark:invert-0 dark:hue-rotate-[20deg] dark:drop-shadow-[0_0_6px_rgba(45,212,191,0.25)]"
+              />
+              {/* Scan band */}
+              <div className="pointer-events-none absolute inset-0" style={mapMask}>
+                <motion.div
+                  className="absolute inset-x-0 h-1/5 bg-linear-to-b from-transparent via-teal-700/15 to-teal-700/45 dark:via-teal-300/20 dark:to-teal-200/60"
+                  animate={{ top: ['-20%', '100%'] }}
+                  transition={{ duration: 5, repeat: Infinity, ease: 'linear', repeatDelay: 1 }}
+                />
+              </div>
+            </div>
+          ) : (
+            /* Live MapLibre Map */
+            <div className="size-full">
+              <ChennaiMap
+                events={events}
+                theme={theme}
+                interactive={true}
+                onSelectEvent={(ev) => setSelectedEvent(ev)}
+              />
+            </div>
+          )}
         </motion.section>
 
         <section className="flex flex-col justify-center px-8 py-16 sm:px-12 lg:px-14 xl:px-20">
@@ -131,6 +165,12 @@ export default function LandingView({ theme, onToggleTheme }) {
           </motion.dl>
         </section>
       </motion.main>
+
+      <AnimatePresence>
+        {selectedEvent && (
+          <EventDrawer key={selectedEvent.id} event={selectedEvent} onClose={() => setSelectedEvent(null)} />
+        )}
+      </AnimatePresence>
     </>
   );
 }
