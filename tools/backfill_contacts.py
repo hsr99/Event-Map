@@ -49,6 +49,9 @@ def main() -> int:
         except Exception as exc:
             print(f"  - #{event['id']}: couldn't read the poster ({exc})")
             continue
+        if details.get("backend") == "heuristic":
+            print(f"  - #{event['id']}: couldn't read the poster (models unavailable); run again later")
+            continue
         found = {k: clean(details.get(k)) for k, clean in CLEANERS.items()}
         found = {k: v for k, v in found.items() if v}
         print(f"  - #{event['id']} {(event.get('title') or '')[:40]!r}: {found or 'nothing found'}")
