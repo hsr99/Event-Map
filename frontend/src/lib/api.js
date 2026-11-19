@@ -13,3 +13,20 @@ export async function errorMessage(res) {
   }
   return `Request failed (${res.status})`;
 }
+
+// Calls to the admin review desk. Throws an Error carrying the HTTP status on failure.
+export async function adminRequest(token, path, { method = 'GET', body } = {}) {
+  const headers = { Authorization: `Bearer ${token}` };
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const res = await fetch(`${API_URL}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const err = new Error(await errorMessage(res));
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}

@@ -6,6 +6,10 @@ import { LocateFixed } from 'lucide-react';
 import { formatPrice, formatDate, formatTime } from '../lib/format';
 
 // Category color accents matching the site's palette
+// Event text comes from public submissions; escape it before it goes into HTML strings.
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+
 const CATEGORY_COLORS = {
   concerts: '#eab308', // Gold
   'tech-events': '#2dd4bf', // Teal
@@ -43,6 +47,7 @@ export default function ChennaiMap({
   const mapRef = useRef(null);
   const popupRef = useRef(null);
   const selectedMarkerRef = useRef(null);
+  const easedToIdRef = useRef(null); // last event the camera moved to
   const [mapLoaded, setMapLoaded] = useState(false);
 
   const isDark = theme === 'dark';
@@ -267,10 +272,10 @@ export default function ChennaiMap({
         const html = `
           <div style="font-family: inherit; padding: 4px; min-width: 170px;">
             <div style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em; color: ${props.color}; font-weight: 600;">
-              ${props.category.replace('-', ' ')} · ${props.area}
+              ${escapeHtml(String(props.category || '').replace('-', ' '))} · ${escapeHtml(props.area)}
             </div>
             <div style="font-size: 14px; font-weight: 700; margin: 3px 0 2px; color: ${isDark ? '#ede9dd' : '#121212'}; line-height: 1.2;">
-              ${props.title}
+              ${escapeHtml(props.title)}
             </div>
             <div style="font-size: 11px; opacity: 0.7; color: ${isDark ? '#ede9dd' : '#121212'};">
               ${formatDate(props.date)} · ${formatTime(props.date)}
@@ -345,7 +350,10 @@ export default function ChennaiMap({
       selectedMarkerRef.current = null;
     }
 
-    if (!selectedEventId) return;
+    if (!selectedEventId) {
+      easedToIdRef.current = null;
+      return;
+    }
 
     const ev = events.find((e) => e.id === selectedEventId);
     if (!ev || typeof ev.lat !== 'number' || typeof ev.lng !== 'number') return;
@@ -376,7 +384,7 @@ export default function ChennaiMap({
           gap: 5px;
         ">
           <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${color};"></span>
-          <span>${ev.area} · ${venueShort}</span>
+          <span>${escapeHtml(ev.area)} · ${escapeHtml(venueShort)}</span>
         </div>
 
         <!-- Teardrop Pin Head & Pulse Beacon -->
@@ -432,6 +440,11 @@ export default function ChennaiMap({
       .addTo(map);
 
     selectedMarkerRef.current = marker;
+
+    // Move the camera only when the selection changes, not when the event list
+    // re-renders; otherwise every pan would snap back to the selected pin.
+    if (easedToIdRef.current === selectedEventId) return;
+    easedToIdRef.current = selectedEventId;
 
     // Fast, snappy camera transition directly to the venue (350ms ease)
     map.easeTo({

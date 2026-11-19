@@ -21,5 +21,7 @@ services:
         sync: false
       - key: ALLOWED_ORIGINS
         sync: false
+      - key: ADMIN_TOKEN # password for the /admin review page (16+ characters)
+        sync: false
       - key: REPORT_IP_SALT
         generateValue: true

@@ -28,12 +28,12 @@ export default function SubmitPosterView() {
 
   const [formData, setFormData] = useState({
     title: '',
-    category: 'concerts',
+    category: '', // blank = let the poster decide
     area: '',
     venue: '',
     date: '',
-    price: 0,
-    isFree: true,
+    price: '', // blank = unknown, read from the poster
+    isFree: false,
     description: '',
     booking_link: '',
     contact: '',
@@ -67,13 +67,16 @@ export default function SubmitPosterView() {
         area: data.area || prev.area,
         date: data.date || prev.date,
         price: data.price !== undefined ? data.price : prev.price,
-        isFree: data.is_free !== undefined ? data.is_free : data.price === 0,
+        isFree: data.is_free !== undefined ? data.is_free : prev.isFree,
         description: data.description || prev.description,
         booking_link: data.booking_link || prev.booking_link,
       }));
-      if (data.needs_review?.length) {
-        setExtractNote('Filled in from the poster. Please double-check the details before submitting.');
-      }
+      const unread = [!data.date && 'date', !data.venue && 'venue'].filter(Boolean);
+      setExtractNote(
+        unread.length
+          ? `Couldn't spot the ${unread.join(' or ')} on the poster. Add it if you know it, or submit anyway and we'll sort it out in review.`
+          : 'Filled in from the poster. Fix anything we got wrong, then submit.',
+      );
     } catch {
       setExtractNote("Couldn't reach the server to read the poster. Fill in the details by hand.");
     } finally {
@@ -106,7 +109,7 @@ export default function SubmitPosterView() {
       body.append('venue', formData.venue);
       body.append('area', formData.area);
       body.append('date', formData.date);
-      body.append('price', String(formData.isFree ? 0 : Number(formData.price || 0)));
+      body.append('price', formData.isFree ? '0' : String(formData.price ?? '').trim());
       body.append('is_free', String(formData.isFree));
       body.append('description', formData.description || '');
       body.append('booking_link', formData.booking_link || '');
@@ -125,6 +128,10 @@ export default function SubmitPosterView() {
       setIsSubmitting(false);
     }
   };
+
+  const hasPoster = Boolean(selectedFile);
+  const canSubmit = hasPoster || Boolean(formData.title.trim() && formData.date && formData.venue.trim());
+  const needsReading = hasPoster && !(formData.title && formData.date && formData.venue);
 
   // Preview event object for EventCard
   const previewEvent = {
@@ -167,7 +174,7 @@ export default function SubmitPosterView() {
           Drop a Poster
         </h1>
         <p className="mt-4 max-w-2xl text-lg italic text-muted">
-          Upload an event poster or flyer. Jarvis reads the details for you, and once a quick review is done it's pinned on the Chennai map.
+          Just drop the poster, that's all we need. Jarvis reads the date, venue and the rest off it, and once a quick review is done it's pinned on the Chennai map.
         </p>
 
         <div className="mt-14 grid grid-cols-1 gap-12 lg:grid-cols-12">
@@ -235,14 +242,19 @@ export default function SubmitPosterView() {
               )}
             </div>
 
+            <p className="border-l-2 border-teal-600/60 pl-3 text-sm italic text-muted">
+              {hasPoster
+                ? 'Everything below is optional. It fills in from your poster; fix anything that looks wrong.'
+                : 'No poster? Fill in at least the title, date and venue.'}
+            </p>
+
             {/* Event Name */}
             <div>
               <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
-                Event Title *
+                Event Title
               </label>
               <input
                 type="text"
-                required
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 className="w-full border-b border-line bg-transparent py-2.5 outline-none font-serif text-lg focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
@@ -253,14 +265,17 @@ export default function SubmitPosterView() {
             {/* Category */}
             <div>
               <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
-                Category *
+                Category
               </label>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {CATEGORIES.map((cat) => (
                   <button
                     key={cat.id}
                     type="button"
-                    onClick={() => setFormData({ ...formData, category: cat.id })}
+                    aria-pressed={formData.category === cat.id}
+                    onClick={() =>
+                      setFormData({ ...formData, category: formData.category === cat.id ? '' : cat.id })
+                    }
                     className={`cursor-pointer border p-3 text-left text-xs font-serif transition-colors ${
                       formData.category === cat.id
                         ? 'border-teal-700 bg-teal-700/10 text-teal-800 dark:border-teal-400 dark:bg-teal-400/10 dark:text-teal-300'
@@ -277,11 +292,10 @@ export default function SubmitPosterView() {
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
                 <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
-                  Venue *
+                  Venue
                 </label>
                 <input
                   type="text"
-                  required
                   list="chennai-venues-list"
                   value={formData.venue}
                   onChange={(e) => handleVenueSelect(e.target.value)}
@@ -299,11 +313,10 @@ export default function SubmitPosterView() {
 
               <div>
                 <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
-                  Neighbourhood / Area *
+                  Neighbourhood / Area
                 </label>
                 <input
                   type="text"
-                  required
                   value={formData.area}
                   onChange={(e) => setFormData({ ...formData, area: e.target.value })}
                   className="w-full border-b border-line bg-transparent py-2.5 outline-none font-serif text-base focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
@@ -316,13 +329,14 @@ export default function SubmitPosterView() {
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
               <div>
                 <label className="block text-xs uppercase tracking-widest text-muted mb-2 font-serif">
-                  Date & Time *
+                  Date & Time
                 </label>
                 <input
                   type="datetime-local"
-                  required
                   value={formData.date.slice(0, 16)}
-                  onChange={(e) => setFormData({ ...formData, date: `${e.target.value}:00+05:30` })}
+                  onChange={(e) =>
+                    setFormData({ ...formData, date: e.target.value ? `${e.target.value}:00+05:30` : '' })
+                  }
                   className="w-full border-b border-line bg-transparent py-2.5 outline-none font-serif text-base focus:border-teal-700 dark:focus:border-teal-400 transition-colors"
                 />
               </div>
@@ -418,7 +432,7 @@ export default function SubmitPosterView() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={Boolean(success) || isSubmitting}
+              disabled={Boolean(success) || isSubmitting || !canSubmit}
               className="cursor-pointer group flex items-center justify-center gap-3 bg-ink px-8 py-4 font-display text-xl tracking-[0.14em] text-ivory transition-colors hover:bg-teal-700 focus-visible:outline-1 focus-visible:outline-teal-600 dark:bg-bone dark:text-ink dark:hover:bg-teal-400 disabled:opacity-50 w-full sm:w-auto"
             >
               {success ? (
@@ -427,7 +441,9 @@ export default function SubmitPosterView() {
                   <span>Submitted for review</span>
                 </>
               ) : (
-                <span>{isSubmitting ? 'Submitting…' : 'Submit for review'}</span>
+                <span>
+                  {isSubmitting ? (needsReading ? 'Reading poster & submitting…' : 'Submitting…') : 'Submit for review'}
+                </span>
               )}
             </button>
           </form>

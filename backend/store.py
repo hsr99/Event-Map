@@ -36,6 +36,10 @@ WRITABLE_EVENT_FIELDS = (
     "description", "image_url", "booking_link", "lat", "lng", "is_featured", "status",
 )
 
+# An event can sit in review with any of these blank, but can't be published without them.
+REQUIRED_TO_PUBLISH = ("title", "category", "venue", "area", "date", "lat", "lng")
+ADMIN_SELECT = f"{EVENT_COLUMNS},submissions(source,submitter_contact,poster_path,extracted_data,created_at)"
+
 
 class StoreNotConfigured(RuntimeError):
     """Supabase URL or service-role key is missing."""
@@ -145,7 +149,7 @@ def create_event(
             raise DuplicatePoster(existing.get("event_id"))
 
     row = {k: event[k] for k in WRITABLE_EVENT_FIELDS if k in event}
-    if row.get("category") not in CATEGORIES:
+    if row.get("category") is not None and row["category"] not in CATEGORIES:
         raise ValueError(f"Unknown category: {row.get('category')!r}")
     row.setdefault("status", "review")
 
@@ -172,6 +176,60 @@ def set_status(event_id: int, status: str) -> Optional[Dict[str, Any]]:
         raise ValueError(f"Unknown status: {status!r}")
     rows = client().table("events").update({"status": status}).eq("id", event_id).execute().data
     return with_frontend_fields(rows[0]) if rows else None
+
+
+def missing_to_publish(event: Dict[str, Any]) -> List[str]:
+    """Fields that must be filled in before this event can go live."""
+    return [f for f in REQUIRED_TO_PUBLISH if event.get(f) in (None, "")]
+
+
+def _admin_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    sub = row.pop("submissions", None)
+    if isinstance(sub, list):
+        sub = sub[0] if sub else None
+    row = with_frontend_fields(row)
+    row["submission"] = sub
+    row["missing"] = missing_to_publish(row)
+    return row
+
+
+def list_admin_events(status: str = "review") -> List[Dict[str, Any]]:
+    """Events in any status, with private submission details, for the review page."""
+    if status not in STATUSES:
+        raise ValueError(f"Unknown status: {status!r}")
+    query = client().table("events").select(ADMIN_SELECT).eq("status", status)
+    # Review queue: oldest first. Everything else: by event date.
+    query = query.order("created_at") if status == "review" else query.order("date", desc=True)
+    return [_admin_row(r) for r in query.limit(500).execute().data]
+
+
+def get_admin_event(event_id: int) -> Optional[Dict[str, Any]]:
+    rows = client().table("events").select(ADMIN_SELECT).eq("id", event_id).limit(1).execute().data
+    return _admin_row(rows[0]) if rows else None
+
+
+def update_event(event_id: int, fields: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    row = {k: v for k, v in fields.items() if k in WRITABLE_EVENT_FIELDS and k != "status"}
+    if row.get("category") is not None and row["category"] not in CATEGORIES:
+        raise ValueError(f"Unknown category: {row.get('category')!r}")
+    if row:
+        client().table("events").update(row).eq("id", event_id).execute()
+    return get_admin_event(event_id)
+
+
+def delete_event(event_id: int) -> bool:
+    """Delete an event, its submission record (cascade) and its poster file."""
+    event = get_admin_event(event_id)
+    if not event:
+        return False
+    client().table("events").delete().eq("id", event_id).execute()
+    path = (event.get("submission") or {}).get("poster_path")
+    if path:
+        try:
+            client().storage.from_(POSTER_BUCKET).remove([path])
+        except Exception as exc:  # a leftover file is harmless; don't fail the delete
+            print(f"[store] Couldn't remove poster {path}: {exc}")
+    return True
 
 
 def list_review_queue() -> List[Dict[str, Any]]:

@@ -7,6 +7,7 @@ import EventsProvider from './data/EventsProvider';
 import LandingView from './views/LandingView';
 import UnifiedEventsDirectory from './components/UnifiedEventsDirectory';
 import SubmitPosterView from './views/SubmitPosterView';
+import AdminView from './views/AdminView';
 
 const THEME_KEY = 'jarvis-theme';
 
@@ -29,6 +30,8 @@ function AnimatedRoutes({ theme, toggleTheme }) {
           path="/submit"
           element={<SubmitPosterView theme={theme} onToggleTheme={toggleTheme} />}
         />
+        {/* Review desk: not linked anywhere, password-protected by the API */}
+        <Route path="/admin" element={<AdminView theme={theme} />} />
       </Routes>
     </AnimatePresence>
   );

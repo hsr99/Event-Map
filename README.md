@@ -82,10 +82,13 @@ Visitor's browser ──(anon key, read-only: published events)──▶ Supabas
               /api/extract   read a poster with the vision models
               /api/submit    save an event as "review" + upload its poster
               /api/reports   flag an event
+              /api/admin/*   review desk (needs ADMIN_TOKEN)
 ```
 
 - Visitors can only **read published events**. They can't write to the database or upload files directly.
 - Every submission starts as **`review`** and only appears on the site after you approve it.
+- A **poster on its own is enough** to submit. The backend reads anything left blank off the poster. If it can't find the date or venue, the event still lands in review, marked with what's missing; it can't be published until that's filled in.
+- **Review at `/admin`** on the site (not linked anywhere). Sign in with `ADMIN_TOKEN`, then check each poster against what was read, fix fields, and Publish, Hide or Delete. Visitors never need to sign in.
 - Private intake details (submitter contact, raw model output, poster hash) are kept in the `submissions` table, which visitors can never read.
 - `frontend/src/data/events.js` is a bundled **fallback snapshot**. It's shown on first paint and whenever Supabase is unreachable.
 
@@ -96,6 +99,7 @@ Visitor's browser ──(anon key, read-only: published events)──▶ Supabas
 3. Copy `.env.example` to `.env` (repo root) and fill in the values from **Project Settings → API**:
    - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`: public, used by the browser
    - `SUPABASE_SERVICE_ROLE_KEY`: **secret**, backend only. Never prefix it with `VITE_`.
+   - `ADMIN_TOKEN`: password for `/admin`, 16+ characters. Backend only.
 4. Install the backend dependencies and move the existing events and posters in:
    ```bash
    pip install -r backend/requirements.txt
@@ -109,6 +113,7 @@ uvicorn backend.main:app --reload --port 8000    # API (from the repo root)
 cd frontend && npm run dev                       # site
 
 python tools/ingest_posters.py                   # new posters in frontend/public/posters/ -> events
+# Review on the site at /admin, or from the terminal:
 python tools/review_events.py                    # see what's waiting for review
 python tools/review_events.py approve 12 15      # publish
 python tools/review_events.py hide 13            # reject / take down
