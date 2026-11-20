@@ -6,6 +6,7 @@ import chennaiMap from '../assets/chennai-map.svg';
 import ChennaiMap from '../components/ChennaiMap';
 import EventDrawer from '../components/EventDrawer';
 import { useEvents } from '../data/eventsContext';
+import { usePageMeta } from '../lib/seo';
 
 const container = {
   hidden: { opacity: 0 },
@@ -32,6 +33,7 @@ const mapMask = {
 
 export default function LandingView({ theme, onToggleTheme }) {
   const navigate = useNavigate();
+  usePageMeta({ path: '/' });
   const [mapMode, setMapMode] = useState('vector'); // 'vector' | 'live'
   const [selectedEvent, setSelectedEvent] = useState(null);
   const { events } = useEvents();

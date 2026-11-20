@@ -25,6 +25,7 @@ import CategoryBentoOverlay from './CategoryBentoOverlay';
 import ChennaiMap from './ChennaiMap';
 import { useEvents } from '../data/eventsContext';
 import { formatDate, formatTime } from '../lib/format';
+import { eventDescription, eventJsonLd, usePageMeta } from '../lib/seo';
 
 const BUDGETS = ['All', 'Free', 'Ticketed'];
 const TIME_FILTERS = [
@@ -159,6 +160,34 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
   }, [eventsByDate]);
 
   const closeEvent = useCallback(() => setSelectedEvent(null), []);
+
+  // Keep the open event in the address bar (?id=N) so it can be shared and indexed.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const current = params.get('id');
+    const wanted = selectedEvent ? String(selectedEvent.id) : null;
+    if (current === wanted) return;
+    if (wanted) params.set('id', wanted);
+    else params.delete('id');
+    const search = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}`);
+  }, [selectedEvent]);
+
+  usePageMeta(
+    selectedEvent
+      ? {
+          title: `${selectedEvent.title} · ${formatDate(selectedEvent.date)}`,
+          description: eventDescription(selectedEvent, formatDate),
+          path: `/events?id=${selectedEvent.id}`,
+          jsonLd: eventJsonLd(selectedEvent),
+        }
+      : {
+          title: "What's on in Chennai: upcoming events",
+          description: `${eventsByDate.length} upcoming concerts, gigs, meetups, workshops and screenings in Chennai, on a live map. Filter by area, date and price.`,
+          path: '/events',
+          jsonLd: eventsByDate.length ? eventsByDate.map(eventJsonLd) : null,
+        },
+  );
 
   // Only let map movement re-filter the list when "filter by map area" is on;
   // otherwise every pan would rebuild the list and re-trigger the map.

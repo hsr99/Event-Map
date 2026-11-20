@@ -592,7 +592,12 @@ export default function AdminView({ theme }) {
     meta.name = 'robots';
     meta.content = 'noindex, nofollow';
     document.head.appendChild(meta);
-    return () => meta.remove();
+    const previousTitle = document.title;
+    document.title = 'Review desk | Jarvis';
+    return () => {
+      meta.remove();
+      document.title = previousTitle;
+    };
   }, []);
 
   const lock = useCallback((message = '') => {

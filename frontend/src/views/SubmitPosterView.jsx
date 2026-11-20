@@ -5,6 +5,7 @@ import { UploadCloud, CheckCircle2, ArrowLeft, Sparkles, Image as ImageIcon, Ale
 import EventCard from '../components/EventCard';
 import { CHENNAI_VENUES } from '../data/venues';
 import { API_URL, errorMessage } from '../lib/api';
+import { usePageMeta } from '../lib/seo';
 
 const CATEGORIES = [
   { id: 'concerts', name: 'Concerts & Gigs' },
@@ -16,6 +17,11 @@ const CATEGORIES = [
 
 export default function SubmitPosterView() {
   const navigate = useNavigate();
+  usePageMeta({
+    title: 'Add your event: drop a poster',
+    description: 'List a Chennai event for free. Upload the poster and we read the date, venue and details for you. Every listing is checked before it goes live.',
+    path: '/submit',
+  });
   const fileInputId = useId();
 
   const [posterPreview, setPosterPreview] = useState(null);
