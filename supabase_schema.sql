@@ -1,5 +1,5 @@
 -- ==============================================================================
--- JARVIS: CHENNAI EVENT MAP — SUPABASE SCHEMA
+-- GATHR: CHENNAI EVENT MAP — SUPABASE SCHEMA
 -- ==============================================================================
 -- Run in the Supabase dashboard: SQL Editor -> New query -> paste -> Run.
 -- Safe to re-run: every statement is idempotent.

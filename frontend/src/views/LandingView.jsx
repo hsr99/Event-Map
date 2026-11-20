@@ -129,7 +129,7 @@ export default function LandingView({ theme, onToggleTheme }) {
             variants={item}
             className="mt-5 font-display text-[clamp(4.5rem,11vw,11rem)] sm:mt-8 leading-[0.82] tracking-[0.02em]"
           >
-            JARVIS
+            GATHR<span className="text-yellow-600 dark:text-yellow-500">.</span>
           </motion.h1>
 
           <motion.p variants={item} className="mt-4 text-2xl font-light italic sm:text-3xl">

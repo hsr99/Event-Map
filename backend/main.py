@@ -29,7 +29,7 @@ from backend.posters import MAX_POSTER_BYTES, InvalidPoster, inspect_poster
 from backend.ratelimit import client_ip, enforce, limiter
 
 app = FastAPI(
-    title="Jarvis Chennai Event Map API",
+    title="Gathr Chennai Event Map API",
     description="Poster extraction, event submissions, reports and review for the Chennai Event Map.",
     version="2.1.0",
 )

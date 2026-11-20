@@ -593,7 +593,7 @@ export default function AdminView({ theme }) {
     meta.content = 'noindex, nofollow';
     document.head.appendChild(meta);
     const previousTitle = document.title;
-    document.title = 'Review desk | Jarvis';
+    document.title = 'Review desk | Gathr';
     return () => {
       meta.remove();
       document.title = previousTitle;

@@ -10,13 +10,13 @@ export default function GlobalHeader({ theme, onToggleTheme }) {
     <header className="sticky top-0 z-40 border-b border-line bg-ivory/90 backdrop-blur-md transition-colors duration-200 dark:bg-ink/90">
       <nav className="mx-auto flex w-full items-center justify-between px-4 py-3 sm:px-6 sm:py-6 lg:px-12 xl:px-16 2xl:px-24">
         {isLanding ? (
-          <span className="pt-1 font-display text-3xl sm:text-4xl leading-none tracking-[0.14em]">JARVIS</span>
+          <span className="pt-1 font-display text-3xl sm:text-4xl leading-none tracking-[0.14em]">GATHR<span className="text-yellow-600 dark:text-yellow-500">.</span></span>
         ) : (
           <Link
             to="/"
             className="pt-1 font-display text-3xl sm:text-4xl leading-none tracking-[0.14em] cursor-pointer hover:text-teal-700 dark:hover:text-teal-400 transition-colors"
           >
-            JARVIS
+            GATHR<span className="text-yellow-600 dark:text-yellow-500">.</span>
           </Link>
         )}
 

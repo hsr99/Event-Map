@@ -4,8 +4,8 @@ import { useEffect } from 'react';
 // JavaScript, so tags set here are what it indexes. (WhatsApp and other link
 // previews don't, so they always get the defaults in index.html.)
 export const SITE_URL = 'https://chennai-events-map.vercel.app';
-export const SITE_NAME = 'Jarvis';
-export const DEFAULT_TITLE = 'Chennai Event Map: concerts, workshops & meetups | Jarvis';
+export const SITE_NAME = 'Gathr';
+export const DEFAULT_TITLE = 'Chennai Event Map: concerts, workshops & meetups | Gathr';
 export const DEFAULT_DESCRIPTION =
   "Find what's on in Chennai this week: concerts, gigs, tech meetups, workshops, college culturals and screenings, all on one live map. Free to browse, and anyone can add an event by dropping its poster.";
 

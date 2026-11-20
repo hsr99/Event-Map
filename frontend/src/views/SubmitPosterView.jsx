@@ -186,7 +186,7 @@ export default function SubmitPosterView() {
           Drop a Poster
         </h1>
         <p className="mt-4 max-w-2xl text-lg italic text-muted">
-          Just drop the poster, that's all we need. Jarvis reads the date, venue and the rest off it, and once a quick review is done it's pinned on the Chennai map.
+          Just drop the poster, that's all we need. Gathr reads the date, venue and the rest off it, and once a quick review is done it's pinned on the Chennai map.
         </p>
 
         <div className="mt-14 grid grid-cols-1 gap-12 lg:grid-cols-12">
