@@ -25,7 +25,7 @@ export default function GlobalHeader({ theme, onToggleTheme }) {
             <Link
               to="/events"
               className={`transition-colors hover:text-teal-700 dark:hover:text-teal-400 ${
-                location.pathname === '/events'
+                location.pathname.startsWith('/events')
                   ? 'text-ink font-semibold dark:text-bone'
                   : 'text-muted'
               }`}

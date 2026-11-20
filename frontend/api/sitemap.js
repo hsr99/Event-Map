@@ -7,8 +7,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const STATIC_PAGES = [
   { path: '/', priority: '1.0', changefreq: 'daily' },
   { path: '/events', priority: '0.9', changefreq: 'daily' },
+  { path: '/events/this-weekend', priority: '0.9', changefreq: 'daily' },
   { path: '/submit', priority: '0.5', changefreq: 'monthly' },
 ];
+
+// Category pages (src/lib/landings.js), listed only while they have upcoming events.
+const CATEGORY_PAGES = ['concerts', 'tech-events', 'college-culturals', 'movies', 'social-gatherings'];
 
 const isUpcoming = (event, now) => {
   const end = new Date(event.end_date || event.date).getTime();
@@ -20,7 +24,7 @@ async function upcomingEvents() {
   const key = process.env.VITE_SUPABASE_ANON_KEY;
   if (!base || !key) return [];
   const res = await fetch(
-    `${base}/rest/v1/events?select=id,date,end_date,updated_at&status=eq.published&order=date.asc`,
+    `${base}/rest/v1/events?select=id,category,date,end_date,updated_at&status=eq.published&order=date.asc`,
     { headers: { apikey: key, Authorization: `Bearer ${key}` } },
   );
   if (!res.ok) return [];
@@ -49,6 +53,11 @@ export default async function handler(req, res) {
   }
   const urls = [
     ...STATIC_PAGES.map((p) => ({ loc: `${SITE}${p.path}`, changefreq: p.changefreq, priority: p.priority })),
+    ...CATEGORY_PAGES.filter((c) => events.some((e) => e.category === c)).map((c) => ({
+      loc: `${SITE}/events/${c}`,
+      changefreq: 'daily',
+      priority: '0.8',
+    })),
     ...events.map((e) => ({
       loc: `${SITE}/events?id=${Number(e.id)}`,
       lastmod: e.updated_at ? new Date(e.updated_at).toISOString().slice(0, 10) : undefined,

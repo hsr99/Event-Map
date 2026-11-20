@@ -17,7 +17,7 @@ import {
   MapPin,
   Ticket,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import EventCard from './EventCard';
 import EventDrawer from './EventDrawer';
 import Select from './Select';
@@ -26,6 +26,7 @@ import ChennaiMap from './ChennaiMap';
 import { useEvents } from '../data/eventsContext';
 import { formatDate, formatTime } from '../lib/format';
 import { eventDescription, eventJsonLd, usePageMeta } from '../lib/seo';
+import { LANDINGS, landingPath } from '../lib/landings';
 
 const BUDGETS = ['All', 'Free', 'Ticketed'];
 const TIME_FILTERS = [
@@ -93,10 +94,28 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
   const navigate = useNavigate();
   const { events: eventsByDate } = useEvents();
 
-  const [activeCategory, setActiveCategory] = useState('all');
+  // The category (and "this weekend" / "tonight") lives in the address:
+  // /events/concerts, /events/this-weekend. See lib/landings.js.
+  const { slug } = useParams();
+  const landing = slug ? LANDINGS[slug] || null : null;
+  const activeCategory = landing?.category || 'all';
   const [isCategoryOverlayOpen, setIsCategoryOverlayOpen] = useState(false);
   const [viewMode, setViewMode] = useState('grid'); // 'grid' | 'split' | 'map'
-  const [timeFilter, setTimeFilter] = useState('all');
+  const [timeFilter, setTimeFilter] = useState(() => landing?.time || 'all');
+
+  // Arriving on /events/this-weekend (e.g. from a link) turns that filter on.
+  const landingTime = landing?.time;
+  const [seenLandingTime, setSeenLandingTime] = useState(landingTime);
+  if (landingTime !== seenLandingTime) {
+    setSeenLandingTime(landingTime);
+    if (landingTime) setTimeFilter(landingTime);
+  }
+
+  const setActiveCategory = (category) => navigate(landingPath(category, timeFilter));
+  const chooseTime = (time) => {
+    setTimeFilter(time);
+    if (activeCategory === 'all') navigate(landingPath('all', time), { replace: true });
+  };
 
   const [query, setQuery] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -132,7 +151,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
     return () => cancelAnimationFrame(id);
   }, [viewMode]);
 
-  const pageTitle = CATEGORY_TITLES[activeCategory] || 'All Experiences';
+  const pageTitle = landing?.heading || CATEGORY_TITLES[activeCategory] || 'All Experiences';
 
   const categoryEvents = useMemo(() => {
     if (activeCategory === 'all') return eventsByDate;
@@ -146,6 +165,12 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
     ],
     [categoryEvents],
   );
+
+  // The events this page is about (for its search description and structured data).
+  const landingEvents = useMemo(() => {
+    const range = timeWindow(landing?.time);
+    return categoryEvents.filter((event) => matchesTime(event, range));
+  }, [categoryEvents, landing]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -180,6 +205,13 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
           description: eventDescription(selectedEvent, formatDate),
           path: `/events?id=${selectedEvent.id}`,
           jsonLd: eventJsonLd(selectedEvent),
+        }
+      : landing
+      ? {
+          title: landing.title,
+          description: landing.description(landingEvents.length),
+          path: `/events/${slug}`,
+          jsonLd: landingEvents.length ? landingEvents.map(eventJsonLd) : null,
         }
       : {
           title: "What's on in Chennai: upcoming events",
@@ -253,8 +285,8 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
     setBudget('All');
     setArea('All');
     setTimeFilter('all');
-    setActiveCategory('all');
     setFilterByMapBounds(false);
+    navigate('/events');
   };
 
   // Handler for pin click on map
@@ -280,6 +312,8 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
     if (!focusedEventId) return visibleEvents[0] || null;
     return visibleEvents.find((e) => e.id === focusedEventId) || visibleEvents[0] || null;
   }, [focusedEventId, visibleEvents]);
+
+  if (slug && !landing) return <Navigate to="/events" replace />;
 
   return (
     <motion.div
@@ -360,6 +394,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
               >
                 {pageTitle}
               </motion.h1>
+              {landing && <p className="mt-3 max-w-xl font-serif italic text-muted sm:mt-4">{landing.intro}</p>}
             </div>
 
             {/* Live Stats Badge */}
@@ -425,7 +460,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
                   <button
                     key={tf.id}
                     type="button"
-                    onClick={() => setTimeFilter(tf.id)}
+                    onClick={() => chooseTime(tf.id)}
                     className={`cursor-pointer whitespace-nowrap px-3 py-1.5 text-xs font-serif transition-colors border ${
                       isActive
                         ? 'border-teal-700 bg-teal-700/10 text-teal-800 dark:border-teal-400 dark:bg-teal-400/10 dark:text-teal-300 font-semibold'
@@ -713,6 +748,24 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
             </motion.div>
           )}
         </AnimatePresence>
+        {/* Plain links to every listing page, so search engines can find them */}
+        <nav aria-label="Browse events" className="mt-12 border-t border-line pt-6 text-sm sm:mt-16">
+          <p className="text-[11px] uppercase tracking-[0.3em] text-muted">Browse Chennai events</p>
+          <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-2 font-serif">
+            {(slug ? [['', { link: 'All events' }]] : [])
+              .concat(Object.entries(LANDINGS).filter(([key]) => key !== slug))
+              .map(([key, page]) => (
+                <li key={key || 'all'}>
+                  <Link
+                    to={key ? `/events/${key}` : '/events'}
+                    className="text-muted underline decoration-line underline-offset-4 transition-colors hover:text-teal-700 hover:decoration-current dark:hover:text-teal-400"
+                  >
+                    {page.link}
+                  </Link>
+                </li>
+              ))}
+          </ul>
+        </nav>
       </main>
 
       {/* Category Overlay */}

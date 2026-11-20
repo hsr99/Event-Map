@@ -19,13 +19,14 @@ function AnimatedRoutes({ theme, toggleTheme }) {
   return (
     <ErrorBoundary resetKey={location.pathname}>
     <AnimatePresence mode="wait" onExitComplete={() => window.scrollTo(0, 0)}>
-      <Routes location={location} key={location.pathname}>
+      {/* /events and /events/concerts etc. are one page: switching category mustn't remount it */}
+      <Routes location={location} key={location.pathname.startsWith('/events') ? '/events' : location.pathname}>
         <Route
           path="/"
           element={<LandingView theme={theme} onToggleTheme={toggleTheme} />}
         />
         <Route
-          path="/events"
+          path="/events/:slug?"
           element={<UnifiedEventsDirectory theme={theme} onToggleTheme={toggleTheme} />}
         />
         <Route
