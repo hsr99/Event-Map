@@ -5,9 +5,9 @@ import { useEffect } from 'react';
 // previews don't, so they always get the defaults in index.html.)
 export const SITE_URL = 'https://chennai-events-map.vercel.app';
 export const SITE_NAME = 'Gathr';
-export const DEFAULT_TITLE = 'Chennai Event Map: concerts, workshops & meetups | Gathr';
+export const DEFAULT_TITLE = 'Events in Chennai & things to do this week | Gathr';
 export const DEFAULT_DESCRIPTION =
-  "Find what's on in Chennai this week: concerts, gigs, tech meetups, workshops, college culturals and screenings, all on one live map. Free to browse, and anyone can add an event by dropping its poster.";
+  "Things to do in Chennai this week: concerts, gigs, meetups, workshops, college culturals and screenings, all on one live map. Add your event by dropping its poster.";
 
 const setMeta = (attr, key, content) => {
   let el = document.head.querySelector(`meta[${attr}="${key}"]`);

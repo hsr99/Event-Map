@@ -214,7 +214,7 @@ export default function UnifiedEventsDirectory({ theme, onToggleTheme }) {
           jsonLd: landingEvents.length ? landingEvents.map(eventJsonLd) : null,
         }
       : {
-          title: "What's on in Chennai: upcoming events",
+          title: "Upcoming events in Chennai: what's on this week",
           description: `${eventsByDate.length} upcoming concerts, gigs, meetups, workshops and screenings in Chennai, on a live map. Filter by area, date and price.`,
           path: '/events',
           jsonLd: eventsByDate.length ? eventsByDate.map(eventJsonLd) : null,
