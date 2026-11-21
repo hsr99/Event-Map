@@ -4,33 +4,37 @@ tools/watch_instagram.py - Check Chennai organisers' Instagram accounts for new
 event posters and send them to the review desk (/admin). Nothing goes on the
 map until you approve it.
 
-Runs on your own computer (Instagram blocks cloud servers), logged in as a
-spare Instagram account. Keep it gentle: a few minutes, once or twice a day.
+Reads Instagram with gallery-dl, logged in as your spare account through
+Firefox's cookies. Runs on your own computer (Instagram blocks cloud servers).
+Keep it gentle: a few minutes, once or twice a day.
 
-One-time setup:
-    venv\\Scripts\\instaloader --login YOUR_SPARE_ACCOUNT   (asks for the password, saves a session file)
-    then list the accounts to watch in tools/instagram_accounts.txt
+Setup:
+    1. Log in to the spare account on instagram.com in Firefox.
+    2. List the accounts to watch in tools/instagram_accounts.txt.
 
 Each run:
-    python tools/watch_instagram.py --user YOUR_SPARE_ACCOUNT
-    python tools/watch_instagram.py --user YOUR_SPARE_ACCOUNT --dry-run   # read posters, save nothing
+    python tools/watch_instagram.py
+    python tools/watch_instagram.py --dry-run   # read posters, save nothing
 
-INSTAGRAM_USER in .env can stand in for --user.
+The first run copies the login out of Firefox (close Firefox first) into
+data/instagram_cookies.txt; later runs use that copy, so Firefox can stay open.
+If Instagram logs the spare account out, delete that file and run again with
+Firefox closed.
 """
 import argparse
 import json
-import os
 import random
+import subprocess
 import sys
 import time
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import requests
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
-
-import instaloader  # noqa: E402
-from instaloader import exceptions as ig_errors  # noqa: E402
 
 from backend import dedupe, store  # noqa: E402
 from backend.contacts import normalize_instagram  # noqa: E402
@@ -40,20 +44,22 @@ from tools.ingest_posters import build_event  # noqa: E402
 
 ACCOUNTS_FILE = ROOT_DIR / "tools" / "instagram_accounts.txt"
 SEEN_FILE = ROOT_DIR / "data" / "instagram_seen.json"
+COOKIES_FILE = ROOT_DIR / "data" / "instagram_cookies.txt"  # the spare account's login: never commit
+GALLERY_DL = Path(sys.executable).with_name("gallery-dl.exe" if sys.platform == "win32" else "gallery-dl")
 
-LOOKBACK_DAYS = 30       # ignore posts older than this
-POSTS_SCANNED = 8        # newest posts looked at per account (one page, one request)
+LOOKBACK_DAYS = 30        # ignore posts older than this
+POSTS_SCANNED = 8         # newest posts looked at per account
 MAX_POSTERS_PER_RUN = 25  # posters read per run, across all accounts (each is one model call)
-SEEN_KEPT = 60           # post ids remembered per account
+SEEN_KEPT = 60            # post ids remembered per account
 
-# Instagram's own signs that we're going too fast or the login is no longer good.
-# On any of these, stop for the day rather than push on.
-PUSHBACK = (
-    ig_errors.TooManyRequestsException,
-    ig_errors.LoginRequiredException,
-    ig_errors.QueryReturnedBadRequestException,
-    ig_errors.ConnectionException,
-)
+# gallery-dl error text that means Instagram is pushing back or the login is no
+# longer good. On any of these, stop for the day rather than push on.
+PUSHBACK_SIGNS = ("429", "too many requests", "login", "challenge", "checkpoint", "401", "403",
+                  "rate limit", "please wait")
+
+
+class InstagramPushback(Exception):
+    pass
 
 
 def pause(low: float, high: float) -> None:
@@ -84,18 +90,61 @@ def save_seen(seen: dict) -> None:
     SEEN_FILE.write_text(json.dumps(seen, indent=1, sort_keys=True), encoding="utf-8")
 
 
-def recent_posts(loader, handle: str, seen_ids: set, cutoff: datetime) -> list:
-    """New, recent picture posts from one account, newest first."""
-    profile = instaloader.Profile.from_username(loader.context, handle)
+def save_login(handle: str) -> bool:
+    """Copy the spare account's login out of Firefox into COOKIES_FILE, once.
+
+    (gallery-dl only exports cookies from a normal or simulated run, not from
+    the JSON listing used below, so this does a one-post simulated run.)
+    """
+    COOKIES_FILE.parent.mkdir(exist_ok=True)
+    subprocess.run([str(GALLERY_DL), "--cookies-from-browser", "firefox", "--cookies-export", str(COOKIES_FILE),
+                    "--post-range", "1", "-s", f"https://www.instagram.com/{handle}/posts/"],
+                   capture_output=True, text=True, encoding="utf-8", timeout=120)
+    return COOKIES_FILE.exists() and "sessionid" in COOKIES_FILE.read_text(encoding="utf-8")
+
+
+def fetch_posts(handle: str) -> list[dict]:
+    """The account's newest posts as {shortcode, date, pinned, image_url, caption}, newest first."""
+    cmd = [str(GALLERY_DL), "--cookies", str(COOKIES_FILE), "--post-range", f"1-{POSTS_SCANNED}",
+           "--sleep-request", "3-8", "-j", f"https://www.instagram.com/{handle}/posts/"]
+    result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", timeout=300)
+    errors = "\n".join(line for line in result.stderr.splitlines() if "[error]" in line or "[warning]" in line)
+    if errors and any(sign in errors.lower() for sign in PUSHBACK_SIGNS):
+        raise InstagramPushback(errors.strip()[:300])
+    try:
+        messages = json.loads(result.stdout or "[]")
+    except ValueError:
+        raise RuntimeError((errors or result.stderr or "no output").strip()[:300])
+    if not isinstance(messages, list):
+        return []
+
+    posts: "OrderedDict[str, dict]" = OrderedDict()
+    for message in messages:
+        if not (isinstance(message, list) and len(message) == 3 and message[0] == 3):
+            continue  # only "file URL + metadata" messages carry posts
+        url, meta = message[1], message[2]
+        code = meta.get("post_shortcode") or meta.get("shortcode")
+        if not code or code in posts:
+            continue  # first file of each post only: in a carousel that's where the poster usually is
+        posts[code] = {
+            "shortcode": code,
+            "date": datetime.strptime(meta["post_date"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc),
+            "pinned": bool(meta.get("pinned")),
+            "image_url": meta.get("display_url") or url if meta.get("type") == "image" else None,
+            "caption": meta.get("description") or "",
+        }
+    return list(posts.values())
+
+
+def new_posts(posts: list[dict], seen_ids: set, cutoff: datetime) -> list[dict]:
+    """Recent picture posts we haven't looked at yet."""
     found = []
-    for i, post in enumerate(profile.get_posts()):
-        if i >= POSTS_SCANNED:
-            break
-        old = post.date_utc.replace(tzinfo=timezone.utc) < cutoff
-        if old and not post.is_pinned:
+    for post in posts:
+        old = post["date"] < cutoff
+        if old and not post["pinned"]:
             break  # posts come newest first (pinned ones aside), so the rest are older still
-        if old or post.shortcode in seen_ids or post.is_video:
-            continue
+        if old or post["shortcode"] in seen_ids or not post["image_url"]:
+            continue  # videos and reels have no poster image
         found.append(post)
     return found
 
@@ -105,11 +154,12 @@ def is_over(event: dict, now: datetime) -> bool:
     return end + timedelta(hours=6) < now
 
 
-def handle_post(loader, handle: str, post, dry_run: bool) -> str:
+def handle_post(handle: str, post: dict, dry_run: bool) -> str:
     """Read one post's poster. Returns 'added', 'skipped' or 'retry' (try again next run)."""
-    link = f"https://www.instagram.com/p/{post.shortcode}/"
-    # For a multi-picture post this is the first picture, which is where the poster usually is.
-    data = loader.context.get_raw(post.url).content
+    link = f"https://www.instagram.com/p/{post['shortcode']}/"
+    resp = requests.get(post["image_url"], timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    resp.raise_for_status()
+    data = resp.content
     try:
         info = inspect_poster(data)
     except InvalidPoster as exc:
@@ -119,7 +169,7 @@ def handle_post(loader, handle: str, post, dry_run: bool) -> str:
         print(f"    {link}: already on record")
         return "skipped"
 
-    details = extract_poster_details(data, filename=f"ig-{handle}-{post.shortcode}.jpg")
+    details = extract_poster_details(data, filename=f"ig-{handle}-{post['shortcode']}.jpg")
     if details["backend"] == "heuristic":
         print(f"    {link}: couldn't read it (models unavailable), will retry next run")
         return "retry"
@@ -148,14 +198,12 @@ def handle_post(loader, handle: str, post, dry_run: bool) -> str:
     event["image_url"] = store.upload_poster(data, info)
     raw = details.get("raw") if isinstance(details.get("raw"), dict) else {}
     store.create_event(event, source="instagram_share", poster=info,
-                       extracted_data={**raw, "instagram_post": link})
+                       extracted_data={**raw, "instagram_post": link, "instagram_caption": post["caption"][:2000]})
     return "added"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Send new event posters from Instagram to the review desk.")
-    ap.add_argument("--user", default=os.environ.get("INSTAGRAM_USER", ""),
-                    help="the spare Instagram account you logged in with")
     ap.add_argument("--dry-run", action="store_true", help="read posters and print, save nothing")
     ap.add_argument("--limit", type=int, default=MAX_POSTERS_PER_RUN, help="most posters to read this run")
     args = ap.parse_args()
@@ -164,30 +212,24 @@ def main() -> int:
     if not accounts:
         print(f"[Instagram] No accounts to watch. Add handles to {ACCOUNTS_FILE.relative_to(ROOT_DIR)}.")
         return 1
-    if not args.user:
-        print("[Instagram] Say which account to use: --user YOUR_SPARE_ACCOUNT (or INSTAGRAM_USER in .env).")
+    if not GALLERY_DL.exists():
+        print("[Instagram] gallery-dl isn't installed:  venv\\Scripts\\python -m pip install gallery-dl")
         return 1
 
-    loader = instaloader.Instaloader(
-        quiet=True, download_pictures=False, download_videos=False, download_video_thumbnails=False,
-        download_comments=False, save_metadata=False, max_connection_attempts=1,
-    )
-    try:
-        loader.load_session_from_file(args.user)
-    except FileNotFoundError:
-        print(f"[Instagram] Not logged in yet. Run once:  venv\\Scripts\\instaloader --login {args.user}")
-        return 1
-    if loader.test_login() != args.user:
-        print(f"[Instagram] The saved login for {args.user} has expired. Log in again:  "
-              f"venv\\Scripts\\instaloader --login {args.user}")
-        return 1
+    if not COOKIES_FILE.exists():
+        print("[Instagram] Copying the spare account's login from Firefox (close Firefox if this fails)...")
+        if not save_login(accounts[0]):
+            COOKIES_FILE.unlink(missing_ok=True)
+            print("[Instagram] No Instagram login found in Firefox. Log in to the spare account on")
+            print("  instagram.com in Firefox, close Firefox completely, and run this again.")
+            return 1
+        pause(5, 15)
 
     seen = load_seen()
     random.shuffle(accounts)
     cutoff = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
     budget, added, read = args.limit, 0, 0
-    print(f"[Instagram] Checking {len(accounts)} account(s) as {args.user}"
-          f"{' (dry run)' if args.dry_run else ''}")
+    print(f"[Instagram] Checking {len(accounts)} account(s){' (dry run)' if args.dry_run else ''}")
 
     try:
         for i, handle in enumerate(accounts):
@@ -198,26 +240,27 @@ def main() -> int:
                 pause(20, 60)
             history = seen.get(handle, [])
             try:
-                posts = recent_posts(loader, handle, set(history), cutoff)
-            except (ig_errors.ProfileNotExistsException, ig_errors.PrivateProfileNotFollowedException) as exc:
-                print(f"  @{handle}: can't see this account ({exc.__class__.__name__}), skipping")
+                posts = new_posts(fetch_posts(handle), set(history), cutoff)
+            except (RuntimeError, subprocess.TimeoutExpired) as exc:
+                print(f"  @{handle}: couldn't read this account ({str(exc)[:150]}), skipping")
                 continue
-            print(f"  @{handle}: {len(posts)} new post(s)")
+            print(f"  @{handle}: {len(posts)} new picture post(s)")
             for post in posts[:budget]:
                 pause(4, 12)
-                result = handle_post(loader, handle, post, args.dry_run)
+                result = handle_post(handle, post, args.dry_run)
                 read += 1
                 budget -= 1
                 added += result == "added"
                 if result != "retry":
-                    history.append(post.shortcode)
+                    history.append(post["shortcode"])
             seen[handle] = history[-SEEN_KEPT:]
             save_seen(seen)
-    except PUSHBACK as exc:
+    except InstagramPushback as exc:
         save_seen(seen)
-        print(f"\n[Instagram] Instagram pushed back ({exc.__class__.__name__}: {str(exc)[:120]}).")
-        print("  Stopped for today. Don't re-run until tomorrow; if it keeps happening, open the")
-        print("  spare account in the Instagram app once and clear any security check it shows.")
+        print(f"\n[Instagram] Instagram pushed back:\n  {exc}")
+        print("  Stopped for today. Don't re-run until tomorrow. If it keeps happening, open the spare")
+        print("  account in Firefox, clear any security check, then delete data/instagram_cookies.txt,")
+        print("  close Firefox and run again.")
         return 2
 
     print(f"\n[Instagram] Read {read} poster(s), sent {added} to the review desk"

@@ -50,3 +50,5 @@ Thumbs.db
 
 # Instagram watcher: which posts it has already looked at
 data/instagram_seen.json
+# Instagram watcher: the spare account's saved login (secret)
+data/instagram_cookies.txt
