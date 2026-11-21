@@ -1,0 +1,4 @@
+# Instagram accounts to check for event posters, one per line.
+# @handle, a bare handle or an instagram.com link all work. Lines starting with # are ignored.
+# Pick Chennai venues, collectives and organisers that mostly post event posters.
+

@@ -47,3 +47,6 @@ results*.csv
 # OS
 .DS_Store
 Thumbs.db
+
+# Instagram watcher: which posts it has already looked at
+data/instagram_seen.json
