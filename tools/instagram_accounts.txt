@@ -2,7 +2,7 @@
 # @handle, a bare handle or an instagram.com link all work. Lines starting with # are ignored.
 # Pick Chennai venues, collectives and organisers that mostly post event posters.
 
-# Shortlisted from the FastSocial test, checked by hand on 24 Nov 2026 (tests/fastsocial/)
+# Shortlisted from the FastSocial test, checked by hand on 24 Nov 2026 (test/fastsocial/)
 resinbypallavi
 artbychahat
 christinas_art_studio

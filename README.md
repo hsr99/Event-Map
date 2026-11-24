@@ -20,6 +20,7 @@ Chennai-events/
 │   ├── test_groq.py             # Test Groq extraction (qwen/qwen3.8-27b)
 │   ├── test_gemini.py           # Test Gemini extraction (gemini-3.5-flash-lite)
 │   ├── test_qwen.py             # Test local CPU Hugging Face transformers pipeline
+│   ├── fastsocial/              # FastSocial Instagram search test + hand-checked shortlist
 │   └── results/                 # Test run outputs
 │       ├── test_results_groq.json
 │       ├── test_results_gemini.json
