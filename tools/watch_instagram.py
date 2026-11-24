@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
 tools/watch_instagram.py - Check Chennai organisers' Instagram accounts for new
-event posters and send them to the review desk (/admin). Nothing goes on the
-map until you approve it.
+event posts and turn them into events.
+
+For each account, only the newest few posts are looked at. Each new post goes:
+  1. caption check (cheap text model): clearly not an upcoming Chennai event? skip
+  2. poster read (vision model), with the caption as extra context
+  3. rules: has a future date, venue inside Chennai, not a duplicate
+  4. everything goes to the review desk (/admin). With --auto-publish, posts that
+     pass every check with confidence go straight onto the map instead.
 
 Reads Instagram with gallery-dl, logged in as your spare account through
 Firefox's cookies. Runs on your own computer (Instagram blocks cloud servers).
@@ -15,6 +21,7 @@ Setup:
 Each run:
     python tools/watch_instagram.py
     python tools/watch_instagram.py --dry-run   # read posters, save nothing
+    python tools/watch_instagram.py --auto-publish   # confident events skip review
 
 The first run copies the login out of Firefox (close Firefox first) into
 data/instagram_cookies.txt; later runs use that copy, so Firefox can stay open.
@@ -37,6 +44,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
 from backend import dedupe, store  # noqa: E402
+from backend.caption_check import check_caption, rules_out  # noqa: E402
 from backend.contacts import normalize_instagram  # noqa: E402
 from backend.extractor import extract_poster_details  # noqa: E402
 from backend.posters import InvalidPoster, inspect_poster  # noqa: E402
@@ -48,8 +56,12 @@ COOKIES_FILE = ROOT_DIR / "data" / "instagram_cookies.txt"  # the spare account'
 GALLERY_DL = Path(sys.executable).with_name("gallery-dl.exe" if sys.platform == "win32" else "gallery-dl")
 
 LOOKBACK_DAYS = 30        # ignore posts older than this
-POSTS_SCANNED = 8         # newest posts looked at per account
-MAX_POSTERS_PER_RUN = 25  # posters read per run, across all accounts (each is one model call)
+POSTS_SCANNED = 6         # posts fetched per account (pinned ones come first, so a few extra)
+LATEST_POSTS = 3          # of those, only the newest few are considered
+MAX_POSTERS_PER_RUN = 25  # posts checked per run, across all accounts
+
+# Rough box around Chennai and its suburbs (Mahabalipuram to Ponneri, Sriperumbudur to the coast).
+CHENNAI_BOX = {"lat": (12.55, 13.45), "lng": (79.80, 80.40)}
 SEEN_KEPT = 60            # post ids remembered per account
 
 # gallery-dl error text that means Instagram is pushing back or the login is no
@@ -130,23 +142,26 @@ def fetch_posts(handle: str) -> list[dict]:
             "shortcode": code,
             "date": datetime.strptime(meta["post_date"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc),
             "pinned": bool(meta.get("pinned")),
-            "image_url": meta.get("display_url") or url if meta.get("type") == "image" else None,
+            # For reels and videos this is the cover image, which is often the poster.
+            "image_url": meta.get("display_url") or (url if meta.get("type") == "image" else None),
+            "format": meta.get("type") or "",
             "caption": meta.get("description") or "",
         }
     return list(posts.values())
 
 
 def new_posts(posts: list[dict], seen_ids: set, cutoff: datetime) -> list[dict]:
-    """Recent picture posts we haven't looked at yet."""
-    found = []
-    for post in posts:
-        old = post["date"] < cutoff
-        if old and not post["pinned"]:
-            break  # posts come newest first (pinned ones aside), so the rest are older still
-        if old or post["shortcode"] in seen_ids or not post["image_url"]:
-            continue  # videos and reels have no poster image
-        found.append(post)
-    return found
+    """Of the account's newest few posts, the recent ones we haven't looked at yet."""
+    latest = sorted(posts, key=lambda p: p["date"], reverse=True)[:LATEST_POSTS]
+    return [p for p in latest if p["date"] >= cutoff and p["shortcode"] not in seen_ids and p["image_url"]]
+
+
+def in_chennai(event: dict) -> bool:
+    lat, lng = event.get("lat"), event.get("lng")
+    if lat is None or lng is None:
+        return True  # unknown: the review desk will catch it
+    return (CHENNAI_BOX["lat"][0] <= lat <= CHENNAI_BOX["lat"][1]
+            and CHENNAI_BOX["lng"][0] <= lng <= CHENNAI_BOX["lng"][1])
 
 
 def is_over(event: dict, now: datetime) -> bool:
@@ -154,58 +169,89 @@ def is_over(event: dict, now: datetime) -> bool:
     return end + timedelta(hours=6) < now
 
 
-def handle_post(handle: str, post: dict, dry_run: bool) -> str:
-    """Read one post's poster. Returns 'added', 'skipped' or 'retry' (try again next run)."""
+def handle_post(handle: str, post: dict, dry_run: bool, auto_publish: bool) -> str:
+    """Run one post through the checks. Returns 'added', 'published', 'skipped' or 'retry' (try again next run)."""
     link = f"https://www.instagram.com/p/{post['shortcode']}/"
+
+    def say(msg: str) -> None:
+        print(f"    {link} [{post['format'] or '?'}] {msg}")
+
+    # 1. Caption check: cheap, text only
+    caption_result = check_caption(post["caption"], post["date"], handle)
+    if rules_out(caption_result):
+        say(f"skip, caption: not an upcoming Chennai event ({caption_result['reason']})")
+        return "skipped"
+
+    # 2. Poster read, with the caption as extra context
     resp = requests.get(post["image_url"], timeout=30, headers={"User-Agent": "Mozilla/5.0"})
     resp.raise_for_status()
     data = resp.content
     try:
         info = inspect_poster(data)
     except InvalidPoster as exc:
-        print(f"    {link}: skipped ({exc})")
+        say(f"skip, image unusable ({exc})")
         return "skipped"
     if store.find_submission_by_hash(info.sha256):
-        print(f"    {link}: already on record")
+        say("skip, this exact poster is already on record")
         return "skipped"
-
-    details = extract_poster_details(data, filename=f"ig-{handle}-{post['shortcode']}.jpg")
+    details = extract_poster_details(data, filename=f"ig-{handle}-{post['shortcode']}.jpg", context=post["caption"])
     if details["backend"] == "heuristic":
-        print(f"    {link}: couldn't read it (models unavailable), will retry next run")
+        say("retry next run: couldn't read it (models unavailable)")
         return "retry"
+
+    # 3. Rules
     if "date" in details["needs_review"]:
-        print(f"    {link}: no event date on it, probably not an event poster")
+        say(f"skip, no event date found (caption check said: {caption_result['announces_event']})")
         return "skipped"
     if is_over(details, datetime.now(timezone.utc)):
-        print(f"    {link}: '{details['title'][:40]}' is already over")
+        say(f"skip, '{details['title'][:40]}' is already over ({details['date'][:10]})")
         return "skipped"
-
     event, review = build_event(details, publish_all=False)
-    event["status"] = "review"  # always a person's call before it's public
     event["instagram"] = event["instagram"] or handle
-
+    if not in_chennai(event):
+        say(f"skip, '{(event['venue'] or event['area'] or '?')[:40]}' is outside Chennai")
+        return "skipped"
     matches = store.find_duplicates(event, info.fingerprint)
     block = dedupe.blocking_match(matches)
     if block:
-        print(f"    {link}: already on the map as #{block['id']} ('{(block['title'] or '')[:40]}')")
+        say(f"skip, already on the map as #{block['id']} ('{(block['title'] or '')[:40]}')")
         return "skipped"
+    if matches:
+        review.append("possible duplicate of " + ", ".join(f"#{m['id']}" for m in matches[:3]))
+    if caption_result["announces_event"] != "yes":
+        review.append("caption didn't clearly announce an event")
 
-    print(f"    {link}: '{event['title'][:40]}' | {event['category']} | {event['date'][:10]} | {event['area'] or '?'}"
-          f"{' (possible duplicate)' if matches else ''}")
+    # 4. Where it goes. During the trial everything is reviewed; `confident` is
+    # recorded so we can later count how often it would have been right.
+    confident = not review
+    event["status"] = "published" if auto_publish and confident else "review"
+    where = event["venue"][:30] or event["area"] or "?"
+    summary = f"'{event['title'][:40]}' | {event['category']} | {event['date'][:16]} | {where}"
+    if event["status"] == "published":
+        verdict = "PUBLISH"
+    else:
+        verdict = "review (confident)" if confident else "review: " + ", ".join(review)
+    say(f"{summary} -> {verdict}")
     if dry_run:
         return "retry"  # nothing saved, so look at it again on a real run
 
     event["image_url"] = store.upload_poster(data, info)
     raw = details.get("raw") if isinstance(details.get("raw"), dict) else {}
-    store.create_event(event, source="instagram_share", poster=info,
-                       extracted_data={**raw, "instagram_post": link, "instagram_caption": post["caption"][:2000]})
-    return "added"
+    store.create_event(event, source="instagram_share", poster=info, extracted_data={
+        **raw,
+        "instagram_post": link,
+        "instagram_caption": post["caption"][:2000],
+        "pipeline": {"caption_check": caption_result, "confident": confident, "review_reasons": review},
+    })
+    return "published" if event["status"] == "published" else "added"
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Send new event posters from Instagram to the review desk.")
     ap.add_argument("--dry-run", action="store_true", help="read posters and print, save nothing")
-    ap.add_argument("--limit", type=int, default=MAX_POSTERS_PER_RUN, help="most posters to read this run")
+    ap.add_argument("--limit", type=int, default=MAX_POSTERS_PER_RUN, help="most posts to check this run")
+    ap.add_argument("--auto-publish", action="store_true",
+                    help="put events that pass every check straight on the map (default: all go to review)")
     args = ap.parse_args()
 
     accounts = load_accounts()
@@ -228,7 +274,7 @@ def main() -> int:
     seen = load_seen()
     random.shuffle(accounts)
     cutoff = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
-    budget, added, read = args.limit, 0, 0
+    budget, added, published, read = args.limit, 0, 0, 0
     print(f"[Instagram] Checking {len(accounts)} account(s){' (dry run)' if args.dry_run else ''}")
 
     try:
@@ -244,13 +290,14 @@ def main() -> int:
             except (RuntimeError, subprocess.TimeoutExpired) as exc:
                 print(f"  @{handle}: couldn't read this account ({str(exc)[:150]}), skipping")
                 continue
-            print(f"  @{handle}: {len(posts)} new picture post(s)")
+            print(f"  @{handle}: {len(posts)} new post(s) among the latest {LATEST_POSTS}")
             for post in posts[:budget]:
                 pause(4, 12)
-                result = handle_post(handle, post, args.dry_run)
+                result = handle_post(handle, post, args.dry_run, args.auto_publish)
                 read += 1
                 budget -= 1
                 added += result == "added"
+                published += result == "published"
                 if result != "retry":
                     history.append(post["shortcode"])
             seen[handle] = history[-SEEN_KEPT:]
@@ -263,7 +310,7 @@ def main() -> int:
         print("  close Firefox and run again.")
         return 2
 
-    print(f"\n[Instagram] Read {read} poster(s), sent {added} to the review desk"
+    print(f"\n[Instagram] Checked {read} post(s): {published} published, {added} sent to the review desk"
           f"{' (dry run: nothing saved)' if args.dry_run else ''}.")
     if added:
         print("  Review them at /admin.")

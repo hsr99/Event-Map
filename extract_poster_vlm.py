@@ -33,6 +33,7 @@ import csv
 import json
 import os
 import sys
+import time
 from datetime import date
 from io import BytesIO
 from pathlib import Path
@@ -89,11 +90,19 @@ Rules:
 """
 
 
-def build_user_prompt(ref: date) -> str:
-    return (
+def build_user_prompt(ref: date, context: str = "") -> str:
+    prompt = (
         f"Reference date (today): {ref.isoformat()}. "
         "Extract all event fields from this poster image."
     )
+    if context.strip():
+        # e.g. the Instagram caption posted with the poster: it often has the year,
+        # full address or booking link that the poster itself leaves out.
+        prompt += (
+            "\n\nText posted alongside this poster (may fill gaps the poster leaves; "
+            "if the two disagree, trust the poster):\n<<<\n" + context.strip()[:3000] + "\n>>>"
+        )
+    return prompt
 
 
 # --------------------------------------------------------------------------- #
@@ -179,6 +188,7 @@ def call_groq(
     img: Image.Image,
     ref: date,
     model: str = "qwen/qwen3.8-27b",
+    context: str = "",
 ) -> dict:
     api_key = os.environ.get("GROQ_API_KEY", "").strip().strip('"').strip("'")
     if not api_key:
@@ -198,7 +208,7 @@ def call_groq(
             raise RuntimeError("Run: pip install groq openai")
 
     data_url = image_to_data_url(img)
-    user_prompt = build_user_prompt(ref)
+    user_prompt = build_user_prompt(ref, context)
 
     # Models to try in order on Groq
     candidates = [model]
@@ -240,6 +250,7 @@ def call_gemini(
     img: Image.Image,
     ref: date,
     model: str = "gemini-3.5-flash-lite",
+    context: str = "",
 ) -> dict:
     try:
         from google import genai
@@ -255,17 +266,24 @@ def call_gemini(
     img_bytes = image_to_bytes(img)
 
     image_part = types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
-    text_part = types.Part.from_text(text=build_user_prompt(ref))
+    text_part = types.Part.from_text(text=build_user_prompt(ref, context))
 
-    response = client.models.generate_content(
-        model=model,
-        contents=[types.Content(role="user", parts=[image_part, text_part])],
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.1,
-            response_mime_type="application/json",
-        ),
-    )
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=[types.Content(role="user", parts=[image_part, text_part])],
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                ),
+            )
+            break
+        except Exception as exc:  # "model overloaded" (503) is usually gone within seconds
+            if attempt == 2 or "503" not in str(exc):
+                raise
+            time.sleep(4 * (attempt + 1))
     raw = parse_model_output(response.text)
     raw["_backend"] = f"gemini/{model}"
     return raw
@@ -281,6 +299,7 @@ def call_local_transformers_qwen(
     img: Image.Image,
     ref: date,
     model_id: str = "Qwen/Qwen2-VL-2B-Instruct",
+    context: str = "",
 ) -> dict:
     """
     Runs local CPU inference using Hugging Face transformers pipeline.
@@ -303,7 +322,7 @@ def call_local_transformers_qwen(
             device="cpu",
         )
 
-    user_prompt = f"{SYSTEM_PROMPT}\n\nReference date (today): {ref.isoformat()}. Extract all event fields from this poster image."
+    user_prompt = f"{SYSTEM_PROMPT}\n\n{build_user_prompt(ref, context)}"
     rgb_img = img.convert("RGB")
 
     messages = [
@@ -359,10 +378,12 @@ def extract_from_image(
     groq_model: str = "qwen/qwen3.8-27b",
     gemini_model: str = "gemini-3.5-flash-lite",
     qwen_model: str = "Qwen/Qwen2-VL-2B-Instruct",
+    context: str = "",
 ) -> dict:
     """Run the Groq -> Gemini -> local Qwen cascade on an already-loaded image.
 
-    `path` is only recorded in the result's "file" field.
+    `path` is only recorded in the result's "file" field. `context` is optional
+    text posted with the poster (e.g. an Instagram caption).
     """
     raw = None
     errors = []
@@ -370,7 +391,7 @@ def extract_from_image(
     # 1. Try Groq (Primary)
     if backend in ("auto", "groq"):
         try:
-            raw = call_groq(img, ref, model=groq_model)
+            raw = call_groq(img, ref, model=groq_model, context=context)
         except Exception as exc:
             errors.append(f"Groq failed: {exc}")
             if backend == "groq":
@@ -380,7 +401,7 @@ def extract_from_image(
     # 2. Try Gemini (First backup)
     if raw is None and backend in ("auto", "gemini"):
         try:
-            raw = call_gemini(img, ref, model=gemini_model)
+            raw = call_gemini(img, ref, model=gemini_model, context=context)
         except Exception as exc:
             errors.append(f"Gemini failed: {exc}")
             if backend == "gemini":
@@ -390,7 +411,7 @@ def extract_from_image(
     # 3. Try Qwen / Local Transformers (Last order)
     if raw is None and backend in ("auto", "qwen", "hf"):
         try:
-            raw = call_local_transformers_qwen(img, ref, model_id=qwen_model)
+            raw = call_local_transformers_qwen(img, ref, model_id=qwen_model, context=context)
         except Exception as exc:
             errors.append(f"Qwen / Transformers failed: {exc}")
             if backend in ("qwen", "hf"):

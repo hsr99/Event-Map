@@ -167,8 +167,12 @@ def extract_poster_details(
     filename: str = "",
     ref: Optional[date] = None,
     backend: str = "auto",
+    context: str = "",
 ) -> Dict[str, Any]:
     """Extract event fields from poster bytes.
+
+    `context` is optional text posted with the poster (an Instagram caption),
+    which the model uses to fill gaps the poster leaves.
 
     Returns the event-shaped dict (see vlm_to_event) plus "raw": the unmapped
     model output, kept for the posters audit table.
@@ -177,7 +181,7 @@ def extract_poster_details(
     try:
         img = Image.open(BytesIO(image_bytes))
         img.load()
-        vlm = extract_from_image(img, Path(filename or "upload"), ref, backend=backend)
+        vlm = extract_from_image(img, Path(filename or "upload"), ref, backend=backend, context=context)
     except Exception as exc:
         print(f"[Extractor] All vision backends failed for {filename or 'upload'}: {exc}", file=sys.stderr)
         event = heuristic_event(filename)
